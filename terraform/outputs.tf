@@ -13,21 +13,6 @@ output "ecr_repository_url" {
   value       = aws_ecr_repository.app_repo.repository_url
 }
 
-output "cognito_user_pool_id" {
-  description = "Cognito User Pool ID"
-  value       = aws_cognito_user_pool.main.id
-}
-
-output "cognito_client_id" {
-  description = "Cognito User Pool Client ID"
-  value       = aws_cognito_user_pool_client.web.id
-}
-
-output "cognito_domain" {
-  description = "Cognito User Pool Domain"
-  value       = aws_cognito_user_pool_domain.main.domain
-}
-
 output "ecs_cluster_name" {
   description = "ECS Cluster name"
   value       = aws_ecs_cluster.main.name

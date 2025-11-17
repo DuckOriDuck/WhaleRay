@@ -1,4 +1,4 @@
-# Users 테이블 - Cognito sub <-> GitHub 계정 매핑
+# Users 테이블 - GitHub 사용자 정보 및 토큰 저장
 resource "aws_dynamodb_table" "users" {
   name           = "${var.project_name}-users"
   billing_mode   = "PAY_PER_REQUEST"
@@ -9,8 +9,42 @@ resource "aws_dynamodb_table" "users" {
     type = "S"
   }
 
+  attribute {
+    name = "githubUsername"
+    type = "S"
+  }
+
+  # GSI: GitHub 사용자명으로 검색
+  global_secondary_index {
+    name            = "GithubUsernameIndex"
+    hash_key        = "githubUsername"
+    projection_type = "ALL"
+  }
+
   tags = {
     Name = "${var.project_name}-users"
+  }
+}
+
+# OAuth States 테이블 - CSRF 방지용 state 저장
+resource "aws_dynamodb_table" "oauth_states" {
+  name           = "${var.project_name}-oauth-states"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "state"
+
+  attribute {
+    name = "state"
+    type = "S"
+  }
+
+  # TTL 설정 (10분 후 자동 삭제)
+  ttl {
+    attribute_name = "expiresAt"
+    enabled        = true
+  }
+
+  tags = {
+    Name = "${var.project_name}-oauth-states"
   }
 }
 

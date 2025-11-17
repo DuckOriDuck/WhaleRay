@@ -43,3 +43,35 @@ Thumbs.db
 
 # AWS
 .aws-sam/
+
+# Lambda build artifacts and dependencies
+build/
+*.zip
+lambda/*/build/
+lambda/*/.Python
+lambda/*/pip-log.txt
+
+# Python packages installed in lambda directories (keep source files only)
+lambda/*/PyJWT/
+lambda/*/requests/
+lambda/*/cryptography/
+lambda/*/urllib3/
+lambda/*/certifi/
+lambda/*/charset_normalizer/
+lambda/*/idna/
+lambda/*/cffi/
+lambda/*/pycparser/
+lambda/*/jwt/
+lambda/*/*.dist-info/
+lambda/*/*.egg-info/
+lambda/*/bin/
+
+# Frontend build outputs
+frontend/dist/
+frontend/build/
+frontend/.next/
+frontend/out/
+
+# Logs
+*.log
+logs/
