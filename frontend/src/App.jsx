@@ -1,0 +1,227 @@
+import { useState, useEffect } from 'react'
+import { signInWithRedirect, getCurrentUser, signOut as amplifySignOut } from 'aws-amplify/auth'
+import { Hub } from 'aws-amplify/utils'
+import { configureAuth } from './lib/auth'
+import ServiceList from './components/ServiceList'
+import DeployForm from './components/DeployForm'
+import DeploymentHistory from './components/DeploymentHistory'
+
+configureAuth()
+
+function App() {
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('services')
+
+  useEffect(() => {
+    // Check current auth state
+    checkUser()
+
+    // Listen for auth events
+    const hubListener = Hub.listen('auth', (data) => {
+      const { payload } = data
+      if (payload.event === 'signedIn') {
+        checkUser()
+      } else if (payload.event === 'signedOut') {
+        setUser(null)
+      }
+    })
+
+    return () => hubListener()
+  }, [])
+
+  const checkUser = async () => {
+    try {
+      const currentUser = await getCurrentUser()
+      setUser(currentUser)
+    } catch (error) {
+      setUser(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSignIn = async () => {
+    try {
+      await signInWithRedirect({ provider: 'GitHub' })
+    } catch (error) {
+      console.error('Sign in error:', error)
+    }
+  }
+
+  const handleSignOut = async () => {
+    try {
+      await amplifySignOut()
+      setUser(null)
+    } catch (error) {
+      console.error('Sign out error:', error)
+    }
+  }
+
+  // Loading state
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        background: '#f5f5f5'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <h2 style={{ color: '#1a73e8' }}>WhaleRay</h2>
+          <p style={{ color: '#666' }}>로딩 중...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Login page
+  if (!user) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        padding: '20px'
+      }}>
+        <div style={{
+          background: 'white',
+          borderRadius: '12px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          padding: '48px',
+          maxWidth: '400px',
+          width: '100%',
+          textAlign: 'center'
+        }}>
+          <h1 style={{
+            fontSize: '42px',
+            fontWeight: '700',
+            color: '#1a73e8',
+            marginBottom: '12px'
+          }}>
+            WhaleRay
+          </h1>
+          <p style={{
+            color: '#666',
+            fontSize: '16px',
+            marginBottom: '48px'
+          }}>
+            Railway 스타일 배포 플랫폼
+          </p>
+
+          <button
+            onClick={handleSignIn}
+            style={{
+              width: '100%',
+              padding: '16px 24px',
+              fontSize: '16px',
+              fontWeight: '600',
+              background: '#24292e',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+              transition: 'all 0.2s'
+            }}
+            onMouseOver={(e) => e.target.style.background = '#1b1f23'}
+            onMouseOut={(e) => e.target.style.background = '#24292e'}
+          >
+            <svg height="24" width="24" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+            </svg>
+            GitHub으로 로그인
+          </button>
+
+          <p style={{
+            marginTop: '32px',
+            fontSize: '14px',
+            color: '#999'
+          }}>
+            GitHub 계정으로 간편하게 로그인하세요
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Main dashboard
+  return (
+    <div>
+      <div className="header">
+        <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h1>WhaleRay</h1>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <span style={{ color: '#666' }}>
+              {user.signInDetails?.loginId || user.username}
+            </span>
+            <button onClick={handleSignOut} className="btn btn-primary">
+              로그아웃
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="container">
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e0e0e0' }}>
+            <button
+              onClick={() => setActiveTab('services')}
+              style={{
+                padding: '12px 24px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'services' ? '2px solid #1a73e8' : '2px solid transparent',
+                color: activeTab === 'services' ? '#1a73e8' : '#666',
+                fontWeight: activeTab === 'services' ? '600' : '400',
+                cursor: 'pointer'
+              }}
+            >
+              서비스
+            </button>
+            <button
+              onClick={() => setActiveTab('deploy')}
+              style={{
+                padding: '12px 24px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'deploy' ? '2px solid #1a73e8' : '2px solid transparent',
+                color: activeTab === 'deploy' ? '#1a73e8' : '#666',
+                fontWeight: activeTab === 'deploy' ? '600' : '400',
+                cursor: 'pointer'
+              }}
+            >
+              새 배포
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              style={{
+                padding: '12px 24px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'history' ? '2px solid #1a73e8' : '2px solid transparent',
+                color: activeTab === 'history' ? '#1a73e8' : '#666',
+                fontWeight: activeTab === 'history' ? '600' : '400',
+                cursor: 'pointer'
+              }}
+            >
+              배포 히스토리
+            </button>
+          </div>
+        </div>
+
+        {activeTab === 'services' && <ServiceList />}
+        {activeTab === 'deploy' && <DeployForm />}
+        {activeTab === 'history' && <DeploymentHistory />}
+      </div>
+    </div>
+  )
+}
+
+export default App
