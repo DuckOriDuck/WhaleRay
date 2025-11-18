@@ -44,6 +44,7 @@ def handler(event, context):
     params = event.get('queryStringParameters') or {}
     code = params.get('code')
     state = params.get('state')
+    installation_id = params.get('installation_id')
     error = params.get('error')
 
     # 1. 에러 처리
@@ -51,6 +52,18 @@ def handler(event, context):
         error_desc = params.get('error_description', error)
         print(f"GitHub OAuth error: {error_desc}")
         return redirect_with_error(f"GitHub OAuth error: {error_desc}")
+
+    # GitHub App 설치 완료 후 setup URL을 통해 installation_id만 돌아오는 경우 처리
+    if not code and not state and installation_id:
+        print(f"Installation callback without code/state. installation_id={installation_id}")
+        return {
+            'statusCode': 302,
+            'headers': {
+                'Location': f"{os.environ.get('FRONTEND_URL', '/')}?github=installed",
+                'Cache-Control': 'no-store'
+            },
+            'body': ''
+        }
 
     if not code or not state:
         return redirect_with_error("Missing code or state parameter")

@@ -76,8 +76,22 @@ resource "aws_iam_role_policy" "lambda_auth" {
   })
 }
 
+# Lambda 패키징 전 cleanup (전체 lambda 폴더 - 크로스 플랫폼 지원)
+# 이 resource는 모든 Lambda 패키징에서 공통으로 사용됩니다
+resource "null_resource" "clean_lambda_pycache" {
+  triggers = {
+    always_run = timestamp()
+  }
+
+  provisioner "local-exec" {
+    command     = "python ../lambda/clean_pycache.py"
+    working_dir = path.module
+  }
+}
+
 # Lambda 패키징
 data "archive_file" "auth_lambda" {
+  depends_on  = [null_resource.clean_lambda_pycache]
   type        = "zip"
   source_dir  = "${path.module}/../lambda/auth"
   output_path = "${path.module}/../build/auth.zip"
@@ -138,6 +152,51 @@ resource "aws_lambda_function" "auth_github_callback" {
   }
 }
 
+resource "aws_lambda_function" "auth_github_install_status" {
+  filename      = data.archive_file.auth_lambda.output_path
+  function_name = "${var.project_name}-auth-github-install-status"
+  role          = aws_iam_role.lambda_auth.arn
+  handler       = "installation.check_installation"
+  runtime       = "python3.11"
+  timeout       = 20
+
+  environment {
+    variables = {
+      USERS_TABLE     = aws_dynamodb_table.users.name
+      KMS_KEY_ID      = aws_kms_key.github_tokens.id
+      GITHUB_APP_SLUG = var.github_app_slug
+      GITHUB_APP_ID   = var.github_app_id
+    }
+  }
+
+  source_code_hash = data.archive_file.auth_lambda.output_base64sha256
+
+  tags = {
+    Name = "${var.project_name}-auth-github-install-status"
+  }
+}
+
+resource "aws_lambda_function" "auth_github_install_redirect" {
+  filename      = data.archive_file.auth_lambda.output_path
+  function_name = "${var.project_name}-auth-github-install-redirect"
+  role          = aws_iam_role.lambda_auth.arn
+  handler       = "installation.redirect_to_install"
+  runtime       = "python3.11"
+  timeout       = 10
+
+  environment {
+    variables = {
+      GITHUB_APP_SLUG = var.github_app_slug
+    }
+  }
+
+  source_code_hash = data.archive_file.auth_lambda.output_base64sha256
+
+  tags = {
+    Name = "${var.project_name}-auth-github-install-redirect"
+  }
+}
+
 # Lambda Authorizer (JWT 검증)
 resource "aws_lambda_function" "auth_verify" {
   filename      = data.archive_file.auth_lambda.output_path
@@ -173,6 +232,22 @@ resource "aws_lambda_permission" "auth_github_callback_apigw" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.auth_github_callback.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "auth_github_install_status_apigw" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.auth_github_install_status.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "auth_github_install_redirect_apigw" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.auth_github_install_redirect.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }

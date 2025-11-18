@@ -82,6 +82,36 @@ resource "aws_apigatewayv2_route" "auth_github_callback" {
   # No authorization - GitHub redirect endpoint
 }
 
+resource "aws_apigatewayv2_integration" "auth_github_install_status" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.auth_github_install_status.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "auth_github_install_status" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "GET /auth/github/installations"
+  target             = "integrations/${aws_apigatewayv2_integration.auth_github_install_status.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+}
+
+resource "aws_apigatewayv2_integration" "auth_github_install_redirect" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.auth_github_install_redirect.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "auth_github_install_redirect" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "GET /auth/github/install"
+  target             = "integrations/${aws_apigatewayv2_integration.auth_github_install_redirect.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+}
+
 # ============================================================================
 # Deploy & Manage Routes
 # ============================================================================

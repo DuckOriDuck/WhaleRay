@@ -77,3 +77,15 @@ variable "github_client_secret" {
   sensitive   = true
   default     = "" # terraform.tfvars에서 설정
 }
+
+variable "github_app_slug" {
+  description = "GitHub App slug for installation redirect (e.g., whaleray)"
+  type        = string
+  default     = ""
+}
+
+variable "github_app_id" {
+  description = "GitHub App ID (used to match installations)"
+  type        = string
+  default     = ""
+}
