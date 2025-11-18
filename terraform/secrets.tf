@@ -1,18 +1,8 @@
-# Secrets Manager for JWT signing secret
-resource "aws_secretsmanager_secret" "jwt_secret" {
+# Data source for existing JWT secret in Secrets Manager
+data "aws_secretsmanager_secret" "jwt_secret" {
   name = "${var.project_name}/jwt-secret-v2"
-
-  tags = {
-    Name = "${var.project_name}-jwt-secret"
-  }
 }
 
-resource "aws_secretsmanager_secret_version" "jwt_secret" {
-  secret_id     = aws_secretsmanager_secret.jwt_secret.id
-  secret_string = random_password.jwt_secret.result
-}
-
-resource "random_password" "jwt_secret" {
-  length  = 64
-  special = true
+data "aws_secretsmanager_secret_version" "jwt_secret" {
+  secret_id = data.aws_secretsmanager_secret.jwt_secret.id
 }

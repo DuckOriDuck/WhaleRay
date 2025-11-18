@@ -70,7 +70,7 @@ resource "aws_iam_role_policy" "lambda_auth" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = aws_secretsmanager_secret.jwt_secret.arn
+        Resource = data.aws_secretsmanager_secret.jwt_secret.arn
       }
     ]
   })
@@ -81,16 +81,17 @@ data "archive_file" "auth_lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../lambda/auth"
   output_path = "${path.module}/../build/auth.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info", "tests"]
 }
 
 # GitHub OAuth Authorize Lambda
 resource "aws_lambda_function" "auth_github_authorize" {
-  filename         = data.archive_file.auth_lambda.output_path
-  function_name    = "${var.project_name}-auth-github-authorize"
-  role            = aws_iam_role.lambda_auth.arn
-  handler         = "authorize.handler"
-  runtime         = "python3.11"
-  timeout         = 30
+  filename      = data.archive_file.auth_lambda.output_path
+  function_name = "${var.project_name}-auth-github-authorize"
+  role          = aws_iam_role.lambda_auth.arn
+  handler       = "authorize.handler"
+  runtime       = "python3.11"
+  timeout       = 30
 
   environment {
     variables = {
@@ -110,12 +111,12 @@ resource "aws_lambda_function" "auth_github_authorize" {
 
 # GitHub OAuth Callback Lambda
 resource "aws_lambda_function" "auth_github_callback" {
-  filename         = data.archive_file.auth_lambda.output_path
-  function_name    = "${var.project_name}-auth-github-callback"
-  role            = aws_iam_role.lambda_auth.arn
-  handler         = "callback.handler"
-  runtime         = "python3.11"
-  timeout         = 30
+  filename      = data.archive_file.auth_lambda.output_path
+  function_name = "${var.project_name}-auth-github-callback"
+  role          = aws_iam_role.lambda_auth.arn
+  handler       = "callback.handler"
+  runtime       = "python3.11"
+  timeout       = 30
 
   environment {
     variables = {
@@ -125,8 +126,8 @@ resource "aws_lambda_function" "auth_github_callback" {
       GITHUB_CLIENT_SECRET = var.github_client_secret
       GITHUB_CALLBACK_URL  = "https://api.${var.domain_name}/auth/github/callback"
       FRONTEND_URL         = "https://${var.domain_name}"
-      KMS_KEY_ID          = aws_kms_key.github_tokens.id
-      JWT_SECRET_ARN      = aws_secretsmanager_secret.jwt_secret.arn
+      KMS_KEY_ID           = aws_kms_key.github_tokens.id
+      JWT_SECRET_ARN       = data.aws_secretsmanager_secret.jwt_secret.arn
     }
   }
 
@@ -139,16 +140,16 @@ resource "aws_lambda_function" "auth_github_callback" {
 
 # Lambda Authorizer (JWT 검증)
 resource "aws_lambda_function" "auth_verify" {
-  filename         = data.archive_file.auth_lambda.output_path
-  function_name    = "${var.project_name}-auth-verify"
-  role            = aws_iam_role.lambda_auth.arn
-  handler         = "verify.handler"
-  runtime         = "python3.11"
-  timeout         = 10
+  filename      = data.archive_file.auth_lambda.output_path
+  function_name = "${var.project_name}-auth-verify"
+  role          = aws_iam_role.lambda_auth.arn
+  handler       = "verify.handler"
+  runtime       = "python3.11"
+  timeout       = 10
 
   environment {
     variables = {
-      JWT_SECRET_ARN = aws_secretsmanager_secret.jwt_secret.arn
+      JWT_SECRET_ARN = data.aws_secretsmanager_secret.jwt_secret.arn
     }
   }
 

@@ -19,7 +19,7 @@ def handler(event, context):
     GitHub 레포지토리를 분석하고 적절한 CodeBuild 프로젝트를 선택하는 Lambda
     """
     try:
-        # Cognito authorizer에서 userId 추출
+        # JWT authorizer에서 userId 추출
         user_id = event['requestContext']['authorizer']['jwt']['claims']['sub']
 
         # 요청 본문 파싱

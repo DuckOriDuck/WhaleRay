@@ -127,6 +127,7 @@ data "archive_file" "deploy_lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../lambda/deploy"
   output_path = "${path.module}/.terraform/lambda-deploy.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
 }
 
 resource "aws_lambda_function" "deploy" {
@@ -157,6 +158,7 @@ data "archive_file" "manage_lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../lambda/manage"
   output_path = "${path.module}/.terraform/lambda-manage.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
 }
 
 resource "aws_lambda_function" "manage" {
@@ -183,6 +185,7 @@ data "archive_file" "ecs_deployer_lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../lambda/ecs_deployer"
   output_path = "${path.module}/.terraform/lambda-ecs-deployer.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
 }
 
 resource "aws_lambda_function" "ecs_deployer" {
@@ -213,6 +216,7 @@ data "archive_file" "logs_api_lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../lambda/logs_api"
   output_path = "${path.module}/.terraform/lambda-logs-api.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
 }
 
 resource "aws_lambda_function" "logs_api" {
@@ -238,6 +242,7 @@ data "archive_file" "repo_inspector_lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../lambda/repo_inspector"
   output_path = "${path.module}/.terraform/lambda-repo-inspector.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
 }
 
 resource "aws_lambda_function" "repo_inspector" {
@@ -252,10 +257,10 @@ resource "aws_lambda_function" "repo_inspector" {
 
   environment {
     variables = {
-      DEPLOYMENTS_TABLE   = aws_dynamodb_table.deployments.name
-      USERS_TABLE         = aws_dynamodb_table.users.name
-      ECR_REPOSITORY_URL  = aws_ecr_repository.app_repo.repository_url
-      PROJECT_NAME        = var.project_name
+      DEPLOYMENTS_TABLE  = aws_dynamodb_table.deployments.name
+      USERS_TABLE        = aws_dynamodb_table.users.name
+      ECR_REPOSITORY_URL = aws_ecr_repository.app_repo.repository_url
+      PROJECT_NAME       = var.project_name
     }
   }
 }

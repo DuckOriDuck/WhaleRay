@@ -72,7 +72,7 @@ def handler(event, context):
 
         # Update user record in DynamoDB
         users_table.update_item(
-            Key={'userId': state},  # state contains the Cognito userId
+            Key={'userId': state},  # state contains the userId
             UpdateExpression='SET githubAccessToken = :token, githubUsername = :username, githubUserId = :userId, updatedAt = :updatedAt',
             ExpressionAttributeValues={
                 ':token': access_token,

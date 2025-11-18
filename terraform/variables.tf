@@ -61,18 +61,19 @@ variable "domain_name" {
 variable "acm_certificate_arn" {
   description = "ACM Certificate ARN for CloudFront (must be in us-east-1)"
   type        = string
-  default     = ""  # terraform.tfvars에서 설정
+  default     = "" # terraform.tfvars에서 설정
 }
 
 variable "github_client_id" {
   description = "GitHub OAuth App Client ID"
   type        = string
-  default     = ""  # terraform.tfvars에서 설정
+  sensitive   = true
+  default     = "" # terraform.tfvars에서 설정
 }
 
 variable "github_client_secret" {
   description = "GitHub OAuth App Client Secret"
   type        = string
   sensitive   = true
-  default     = ""  # terraform.tfvars에서 설정
+  default     = "" # terraform.tfvars에서 설정
 }

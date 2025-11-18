@@ -26,7 +26,7 @@ def handler(event, context):
     ECS 서비스 배포를 처리하는 Lambda 함수
     """
     try:
-        # Cognito authorizer에서 userId 추출
+        # JWT authorizer에서 userId 추출
         user_id = event['requestContext']['authorizer']['jwt']['claims']['sub']
 
         # 요청 본문 파싱

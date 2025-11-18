@@ -7,9 +7,6 @@ Write-Host "=== WhaleRay Frontend 배포 ===" -ForegroundColor Cyan
 Write-Host "`n[단계 1/5] Terraform 출력 가져오기..." -ForegroundColor Yellow
 Push-Location terraform
 
-$userPoolId = terraform output -raw cognito_user_pool_id
-$userPoolClientId = terraform output -raw cognito_client_id
-$cognitoDomain = terraform output -raw cognito_domain
 $apiEndpoint = terraform output -raw api_endpoint
 $ecrUrl = terraform output -raw ecr_repository_url
 $albDns = terraform output -raw alb_dns
@@ -27,11 +24,6 @@ Write-Host "`n[단계 2/5] config.js 생성 중..." -ForegroundColor Yellow
 $configContent = @"
 export const config = {
   region: 'ap-northeast-2',
-  cognito: {
-    userPoolId: '$userPoolId',
-    userPoolClientId: '$userPoolClientId',
-    domain: '$cognitoDomain'
-  },
   apiEndpoint: '$apiEndpoint',
   ecrRepositoryUrl: '$ecrUrl',
   albDns: '$albDns'
