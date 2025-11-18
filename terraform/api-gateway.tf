@@ -45,7 +45,8 @@ resource "aws_apigatewayv2_authorizer" "lambda_jwt" {
   authorizer_payload_format_version = "2.0"
   enable_simple_responses           = false
   identity_sources                  = ["$request.header.Authorization"]
-  authorizer_result_ttl_in_seconds  = 300 # 5분 캐싱
+  # 0으로 두어 실패 캐시로 인한 오동작을 방지
+  authorizer_result_ttl_in_seconds = 0
 }
 
 # ============================================================================
@@ -60,9 +61,9 @@ resource "aws_apigatewayv2_integration" "auth_github_authorize" {
   payload_format_version = "2.0"
 }
 
-resource "aws_apigatewayv2_route" "auth_github_authorize" {
+resource "aws_apigatewayv2_route" "auth_github_start" {
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = "GET /auth/github/authorize"
+  route_key = "GET /auth/github/start"
   target    = "integrations/${aws_apigatewayv2_integration.auth_github_authorize.id}"
   # No authorization - public endpoint
 }
@@ -132,6 +133,14 @@ resource "aws_lambda_permission" "manage_api" {
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }
 
+resource "aws_lambda_permission" "service_api" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.service.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
 resource "aws_apigatewayv2_integration" "deploy" {
   api_id           = aws_apigatewayv2_api.main.id
   integration_type = "AWS_PROXY"
@@ -142,6 +151,13 @@ resource "aws_apigatewayv2_integration" "manage" {
   api_id           = aws_apigatewayv2_api.main.id
   integration_type = "AWS_PROXY"
   integration_uri  = aws_lambda_function.manage.invoke_arn
+}
+
+resource "aws_apigatewayv2_integration" "service" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.service.invoke_arn
+  payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_route" "deploy" {
@@ -155,7 +171,7 @@ resource "aws_apigatewayv2_route" "deploy" {
 resource "aws_apigatewayv2_route" "services_list" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "GET /services"
-  target             = "integrations/${aws_apigatewayv2_integration.manage.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.service.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
 }
@@ -163,7 +179,7 @@ resource "aws_apigatewayv2_route" "services_list" {
 resource "aws_apigatewayv2_route" "services_get" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "GET /services/{serviceId}"
-  target             = "integrations/${aws_apigatewayv2_integration.manage.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.service.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
 }
@@ -195,6 +211,38 @@ resource "aws_apigatewayv2_route" "deployment_logs" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "GET /deployments/{deploymentId}/logs"
   target             = "integrations/${aws_apigatewayv2_integration.logs_api.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+}
+
+# GET /me Integration
+resource "aws_apigatewayv2_integration" "auth_me" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.auth_me.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "auth_me" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "GET /me"
+  target             = "integrations/${aws_apigatewayv2_integration.auth_me.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+}
+
+# GET /github/repositories Integration
+resource "aws_apigatewayv2_integration" "github_repositories" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.github_repositories.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "github_repositories" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "GET /github/repositories"
+  target             = "integrations/${aws_apigatewayv2_integration.github_repositories.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
 }

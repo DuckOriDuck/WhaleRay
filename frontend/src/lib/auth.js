@@ -67,11 +67,12 @@ export function isAuthenticated() {
 }
 
 /**
- * GitHub OAuth 로그인 시작
+ * GitHub App 로그인 시작
  */
 export function loginWithGitHub() {
-  const redirectUri = window.location.origin
-  window.location.href = `${config.authEndpoint}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`
+  const redirectUri = config.frontendUrl || window.location.origin
+  const authBase = config.authEndpoint || `${config.apiEndpoint}/auth/github`
+  window.location.href = `${authBase}/start?redirect_uri=${encodeURIComponent(redirectUri)}`
 }
 
 /**

@@ -106,3 +106,30 @@ resource "aws_dynamodb_table" "services" {
     Name = "${var.project_name}-services"
   }
 }
+
+# Installations 테이블 - GitHub App installations 저장
+resource "aws_dynamodb_table" "installations" {
+  name         = "${var.project_name}-installations"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "installationId"
+
+  attribute {
+    name = "installationId"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "userId-index"
+    hash_key        = "userId"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.project_name}-installations"
+  }
+}

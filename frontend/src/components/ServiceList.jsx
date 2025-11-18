@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getServices, getGitHubInstallationStatus } from '../lib/api'
+import { config } from '../config'
 
 export default function ServiceList() {
   const [services, setServices] = useState([])
@@ -43,7 +44,7 @@ export default function ServiceList() {
     return <div className="loading">로딩 중...</div>
   }
 
-  const githubAppInstallUrl = 'https://github.com/apps/whaleray/installations/select_target'
+  const githubAppInstallUrl = config.githubAppInstallUrl || 'https://github.com/apps/whaleray/installations/select_target'
 
   if (error) {
     const installLink = githubAppInstallUrl

@@ -89,3 +89,10 @@ variable "github_app_id" {
   type        = string
   default     = ""
 }
+
+variable "github_app_private_key" {
+  description = "GitHub App Private Key (PEM format)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

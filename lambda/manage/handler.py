@@ -16,13 +16,46 @@ def handler(event, context):
     """
     서비스 및 배포 정보를 조회하는 Lambda 함수
     """
-    try:
-        # JWT authorizer에서 userId 추출
-        user_id = event['requestContext']['authorizer']['jwt']['claims']['sub']
+    print(f"Event received: {json.dumps(event)}")
 
-        # 라우트 정보
-        route_key = event['routeKey']
-        path_params = event.get('pathParameters', {})
+    try:
+        # Authorizer 컨텍스트에서 userId 추출 (Lambda authorizer or JWT authorizer 모두 대응)
+        auth_ctx = event.get('requestContext', {}).get('authorizer', {}) or {}
+
+        user_id = None
+        # Lambda authorizer (our verify.py) puts values under authorizer.userId or authorizer.lambda.*
+        user_id = auth_ctx.get('userId')
+        if not user_id:
+            lambda_ctx = auth_ctx.get('lambda', {}) or {}
+            user_id = lambda_ctx.get('userId') or lambda_ctx.get('sub')
+
+        # JWT (Cognito/HTTP API JWT) 형태 fallback
+        if not user_id:
+            jwt_ctx = auth_ctx.get('jwt', {}) or {}
+            claims = jwt_ctx.get('claims', {}) or {}
+            user_id = claims.get('sub')
+
+        if not user_id:
+            print(f"Unauthorized: userId not found in authorizer context: keys={list(auth_ctx.keys())}")
+            return {
+                'statusCode': 401,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'error': 'Unauthorized'})
+            }
+
+        print(f"Using authorizer user_id={user_id}")
+
+        # 라우트 정보 (HTTP API v2는 routeKey, REST 배포/호출 시에는 resource+path/httpMethod 조합)
+        route_key = event.get('routeKey')
+        if not route_key:
+            method = event.get('httpMethod')
+            path = event.get('resource') or event.get('path')
+            if method and path:
+                route_key = f"{method} {path}"
+        path_params = event.get('pathParameters', {}) or {}
         query_params = event.get('queryStringParameters', {}) or {}
 
         # GET /services - 모든 서비스 조회

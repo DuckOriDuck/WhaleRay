@@ -1,51 +1,26 @@
-import { useState } from 'react'
-import { deployService } from '../lib/api'
+import { useState, useEffect } from 'react'
+import { getGitHubRepositories, createDeployment } from '../lib/api'
 
 export default function DeployForm() {
-  const [formData, setFormData] = useState({
-    serviceName: '',
-    imageUri: '',
-    port: '3000',
-    envVars: ''
-  })
-  const [loading, setLoading] = useState(false)
+  const [repositories, setRepositories] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [deploying, setDeploying] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
+  const [selectedRepo, setSelectedRepo] = useState('')
+  const [branch, setBranch] = useState('main')
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  useEffect(() => {
+    loadRepositories()
+  }, [])
+
+  async function loadRepositories() {
     setLoading(true)
     setError(null)
-    setSuccess(null)
 
     try {
-      // 환경 변수 파싱 (KEY=VALUE 형식)
-      const envVars = {}
-      if (formData.envVars.trim()) {
-        formData.envVars.split('\n').forEach(line => {
-          const [key, ...valueParts] = line.split('=')
-          if (key && valueParts.length > 0) {
-            envVars[key.trim()] = valueParts.join('=').trim()
-          }
-        })
-      }
-
-      const result = await deployService({
-        serviceName: formData.serviceName,
-        imageUri: formData.imageUri,
-        port: parseInt(formData.port),
-        envVars
-      })
-
-      setSuccess(`배포가 시작되었습니다! Deployment ID: ${result.deploymentId}`)
-
-      // 폼 리셋
-      setFormData({
-        serviceName: '',
-        imageUri: '',
-        port: '3000',
-        envVars: ''
-      })
+      const data = await getGitHubRepositories()
+      setRepositories(data.repositories || [])
     } catch (err) {
       setError(err.message)
     } finally {
@@ -53,69 +28,106 @@ export default function DeployForm() {
     }
   }
 
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setDeploying(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const result = await createDeployment(selectedRepo, branch)
+      setSuccess(`배포가 시작되었습니다! Deployment ID: ${result.deploymentId}`)
+
+      // 폼 리셋
+      setSelectedRepo('')
+      setBranch('main')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDeploying(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="card">
+        <h2>새 배포</h2>
+        <p>리포지토리 목록을 불러오는 중...</p>
+      </div>
+    )
+  }
+
+  if (repositories.length === 0) {
+    return (
+      <div className="card">
+        <h2>새 배포</h2>
+        <p style={{ color: '#666', marginBottom: '16px' }}>
+          사용 가능한 리포지토리가 없습니다. GitHub App에 리포지토리 권한을 부여해주세요.
+        </p>
+        <button
+          onClick={() => window.location.href = 'https://github.com/apps/whaleray/installations/select_target'}
+          className="btn btn-primary"
+        >
+          GitHub App 설정
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="card">
-      <h2>새 서비스 배포</h2>
+      <h2>새 배포</h2>
 
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
 
       <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label htmlFor="serviceName">서비스 이름</label>
+          <label htmlFor="repository">리포지토리</label>
+          <select
+            id="repository"
+            value={selectedRepo}
+            onChange={(e) => {
+              setSelectedRepo(e.target.value)
+              // 선택한 repo의 defaultBranch를 찾아서 설정
+              const repo = repositories.find(r => r.fullName === e.target.value)
+              if (repo && repo.defaultBranch) {
+                setBranch(repo.defaultBranch)
+              }
+            }}
+            required
+            style={{
+              width: '100%',
+              padding: '10px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              fontSize: '14px'
+            }}
+          >
+            <option value="">리포지토리를 선택하세요</option>
+            {repositories.map(repo => (
+              <option key={repo.id} value={repo.fullName}>
+                {repo.fullName} {repo.private ? '🔒' : ''}
+                {repo.language ? ` - ${repo.language}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="branch">브랜치</label>
           <input
-            id="serviceName"
+            id="branch"
             type="text"
-            value={formData.serviceName}
-            onChange={(e) => setFormData({ ...formData, serviceName: e.target.value })}
-            placeholder="my-app"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            placeholder="main"
             required
           />
         </div>
 
-        <div className="form-group">
-          <label htmlFor="imageUri">Docker 이미지 URI</label>
-          <input
-            id="imageUri"
-            type="text"
-            value={formData.imageUri}
-            onChange={(e) => setFormData({ ...formData, imageUri: e.target.value })}
-            placeholder="123456789.dkr.ecr.ap-northeast-2.amazonaws.com/my-app:latest"
-            required
-          />
-          <small style={{ display: 'block', marginTop: '4px', color: '#666' }}>
-            ECR 이미지 URI 또는 Docker Hub 이미지
-          </small>
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="port">포트</label>
-          <input
-            id="port"
-            type="number"
-            value={formData.port}
-            onChange={(e) => setFormData({ ...formData, port: e.target.value })}
-            placeholder="3000"
-            required
-          />
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="envVars">환경 변수 (선택사항)</label>
-          <textarea
-            id="envVars"
-            rows="5"
-            value={formData.envVars}
-            onChange={(e) => setFormData({ ...formData, envVars: e.target.value })}
-            placeholder="NODE_ENV=production&#10;API_KEY=your-key&#10;DATABASE_URL=postgres://..."
-          />
-          <small style={{ display: 'block', marginTop: '4px', color: '#666' }}>
-            한 줄에 하나씩 KEY=VALUE 형식으로 입력
-          </small>
-        </div>
-
-        <button type="submit" className="btn btn-primary" disabled={loading}>
-          {loading ? '배포 중...' : '배포하기'}
+        <button type="submit" className="btn btn-primary" disabled={deploying || !selectedRepo}>
+          {deploying ? '배포 중...' : '배포하기'}
         </button>
       </form>
     </div>
