@@ -1,25 +1,29 @@
-import { fetchAuthSession } from 'aws-amplify/auth'
 import { config } from '../config'
+import { getToken } from './auth'
 
 const API_BASE_URL = config.apiEndpoint
 
-async function getAuthHeaders() {
-  try {
-    const session = await fetchAuthSession()
-    const token = session.tokens?.idToken?.toString()
+/**
+ * Authorization 헤더 생성
+ */
+function getAuthHeaders() {
+  const token = getToken()
 
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    }
-  } catch (error) {
-    console.error('Failed to get auth headers:', error)
-    throw new Error('Authentication required')
+  if (!token) {
+    throw new Error('No authentication token found')
+  }
+
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
   }
 }
 
+/**
+ * 서비스 배포
+ */
 export async function deployService(serviceData) {
-  const headers = await getAuthHeaders()
+  const headers = getAuthHeaders()
 
   const response = await fetch(`${API_BASE_URL}/deploy`, {
     method: 'POST',
@@ -35,8 +39,11 @@ export async function deployService(serviceData) {
   return response.json()
 }
 
+/**
+ * 서비스 목록 조회
+ */
 export async function getServices() {
-  const headers = await getAuthHeaders()
+  const headers = getAuthHeaders()
 
   const response = await fetch(`${API_BASE_URL}/services`, {
     method: 'GET',
@@ -51,8 +58,11 @@ export async function getServices() {
   return data.services || []
 }
 
+/**
+ * 특정 서비스 조회
+ */
 export async function getService(serviceId) {
-  const headers = await getAuthHeaders()
+  const headers = getAuthHeaders()
 
   const response = await fetch(`${API_BASE_URL}/services/${serviceId}`, {
     method: 'GET',
@@ -66,8 +76,11 @@ export async function getService(serviceId) {
   return response.json()
 }
 
+/**
+ * 배포 히스토리 조회
+ */
 export async function getDeployments() {
-  const headers = await getAuthHeaders()
+  const headers = getAuthHeaders()
 
   const response = await fetch(`${API_BASE_URL}/deployments`, {
     method: 'GET',

@@ -16,6 +16,26 @@ resource "aws_apigatewayv2_stage" "main" {
   auto_deploy = true
 }
 
+# API Gateway Custom Domain
+resource "aws_apigatewayv2_domain_name" "api" {
+  domain_name = "api.${var.domain_name}"
+
+  domain_name_configuration {
+    certificate_arn = aws_acm_certificate.alb.arn
+    endpoint_type   = "REGIONAL"
+    security_policy = "TLS_1_2"
+  }
+
+  depends_on = [aws_acm_certificate_validation.alb]
+}
+
+# API Mapping
+resource "aws_apigatewayv2_api_mapping" "api" {
+  api_id      = aws_apigatewayv2_api.main.id
+  domain_name = aws_apigatewayv2_domain_name.api.id
+  stage       = aws_apigatewayv2_stage.main.id
+}
+
 # Lambda Authorizer (JWT 검증)
 resource "aws_apigatewayv2_authorizer" "lambda_jwt" {
   api_id                            = aws_apigatewayv2_api.main.id

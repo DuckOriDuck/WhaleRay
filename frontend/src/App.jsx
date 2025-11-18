@@ -1,12 +1,8 @@
 import { useState, useEffect } from 'react'
-import { signInWithRedirect, getCurrentUser, signOut as amplifySignOut } from 'aws-amplify/auth'
-import { Hub } from 'aws-amplify/utils'
-import { configureAuth } from './lib/auth'
+import { isAuthenticated, getUser, loginWithGitHub, logout, handleAuthCallback } from './lib/auth'
 import ServiceList from './components/ServiceList'
 import DeployForm from './components/DeployForm'
 import DeploymentHistory from './components/DeploymentHistory'
-
-configureAuth()
 
 function App() {
   const [user, setUser] = useState(null)
@@ -14,48 +10,30 @@ function App() {
   const [activeTab, setActiveTab] = useState('services')
 
   useEffect(() => {
-    // Check current auth state
-    checkUser()
+    // OAuth 콜백 처리 (URL에 token 파라미터가 있으면)
+    const authResult = handleAuthCallback()
+    if (authResult) {
+      setUser(authResult)
+      setLoading(false)
+      return
+    }
 
-    // Listen for auth events
-    const hubListener = Hub.listen('auth', (data) => {
-      const { payload } = data
-      if (payload.event === 'signedIn') {
-        checkUser()
-      } else if (payload.event === 'signedOut') {
-        setUser(null)
-      }
-    })
+    // 기존 인증 상태 확인
+    if (isAuthenticated()) {
+      const currentUser = getUser()
+      setUser(currentUser)
+    }
 
-    return () => hubListener()
+    setLoading(false)
   }, [])
 
-  const checkUser = async () => {
-    try {
-      const currentUser = await getCurrentUser()
-      setUser(currentUser)
-    } catch (error) {
-      setUser(null)
-    } finally {
-      setLoading(false)
-    }
+  const handleSignIn = () => {
+    loginWithGitHub()
   }
 
-  const handleSignIn = async () => {
-    try {
-      await signInWithRedirect({ provider: 'GitHub' })
-    } catch (error) {
-      console.error('Sign in error:', error)
-    }
-  }
-
-  const handleSignOut = async () => {
-    try {
-      await amplifySignOut()
-      setUser(null)
-    } catch (error) {
-      console.error('Sign out error:', error)
-    }
+  const handleSignOut = () => {
+    logout()
+    setUser(null)
   }
 
   // Loading state
@@ -159,7 +137,7 @@ function App() {
           <h1>WhaleRay</h1>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             <span style={{ color: '#666' }}>
-              {user.signInDetails?.loginId || user.username}
+              {user.username}
             </span>
             <button onClick={handleSignOut} className="btn btn-primary">
               로그아웃

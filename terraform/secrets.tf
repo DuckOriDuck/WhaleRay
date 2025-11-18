@@ -1,6 +1,6 @@
 # Secrets Manager for JWT signing secret
 resource "aws_secretsmanager_secret" "jwt_secret" {
-  name = "${var.project_name}/jwt-secret"
+  name = "${var.project_name}/jwt-secret-v2"
 
   tags = {
     Name = "${var.project_name}-jwt-secret"
