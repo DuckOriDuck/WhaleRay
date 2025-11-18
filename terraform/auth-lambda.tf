@@ -81,6 +81,7 @@ data "archive_file" "auth_lambda" {
   type        = "zip"
   source_dir  = "${path.module}/../lambda/auth"
   output_path = "${path.module}/../build/auth.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info", "tests"]
 }
 
 # GitHub OAuth Authorize Lambda

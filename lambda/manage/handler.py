@@ -17,7 +17,7 @@ def handler(event, context):
     서비스 및 배포 정보를 조회하는 Lambda 함수
     """
     try:
-        # Cognito authorizer에서 userId 추출
+        # JWT authorizer에서 userId 추출
         user_id = event['requestContext']['authorizer']['jwt']['claims']['sub']
 
         # 라우트 정보

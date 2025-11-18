@@ -67,6 +67,7 @@ variable "acm_certificate_arn" {
 variable "github_client_id" {
   description = "GitHub OAuth App Client ID"
   type        = string
+  sensitive  = true
   default     = ""  # terraform.tfvars에서 설정
 }
 

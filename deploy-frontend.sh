@@ -9,9 +9,6 @@ echo "=== WhaleRay Frontend 배포 ==="
 # Terraform 출력에서 값 가져오기
 cd terraform
 REGION="ap-northeast-2"
-USER_POOL_ID=$(terraform output -raw cognito_user_pool_id)
-USER_POOL_CLIENT_ID=$(terraform output -raw cognito_client_id)
-COGNITO_DOMAIN=$(terraform output -raw cognito_domain)
 API_ENDPOINT=$(terraform output -raw api_endpoint)
 ECR_URL=$(terraform output -raw ecr_repository_url)
 ALB_DNS=$(terraform output -raw alb_dns)
@@ -24,11 +21,6 @@ echo -e "\n[1/4] config.js 생성 중..."
 cat > frontend/src/config.js <<EOF
 export const config = {
   region: '${REGION}',
-  cognito: {
-    userPoolId: '${USER_POOL_ID}',
-    userPoolClientId: '${USER_POOL_CLIENT_ID}',
-    domain: '${COGNITO_DOMAIN}'
-  },
   apiEndpoint: '${API_ENDPOINT}',
   ecrRepositoryUrl: '${ECR_URL}',
   albDns: '${ALB_DNS}'
