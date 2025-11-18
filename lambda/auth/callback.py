@@ -1,18 +1,16 @@
 """
-GitHub OAuth Callback Lambda
-GitHub OAuth 콜백을 처리하고 JWT 토큰 발급
+GitHub App OAuth Callback Lambda
+GitHub App 설치 후 OAuth 콜백을 처리하고 JWT 토큰 발급
 """
 import json
 import os
 import time
-import base64
 import uuid
 from datetime import datetime, timedelta
 from urllib.parse import quote
 import boto3
 import requests
 
-# PyJWT는 requirements.txt에 정의되어 Lambda Layer 또는 패키징에 포함
 try:
     import jwt
 except ImportError:
@@ -20,11 +18,11 @@ except ImportError:
     jwt = None
 
 dynamodb = boto3.resource('dynamodb')
-kms = boto3.client('kms')
 secrets_manager = boto3.client('secretsmanager')
 
 states_table = dynamodb.Table(os.environ['OAUTH_STATES_TABLE'])
 users_table = dynamodb.Table(os.environ['USERS_TABLE'])
+installations_table = dynamodb.Table(os.environ['INSTALLATIONS_TABLE'])
 
 JWT_ALGORITHM = 'HS256'
 
@@ -36,6 +34,8 @@ def handler(event, context):
     쿼리 파라미터:
     - code: GitHub Authorization Code
     - state: CSRF 방지용 state
+    - installation_id: GitHub App Installation ID
+    - setup_action: "install" or "update"
 
     Returns:
     - 302 Redirect to frontend with JWT token
@@ -44,7 +44,11 @@ def handler(event, context):
     params = event.get('queryStringParameters') or {}
     code = params.get('code')
     state = params.get('state')
+    installation_id = params.get('installation_id')
+    setup_action = params.get('setup_action')
     error = params.get('error')
+
+    print(f"Callback params: code={bool(code)}, state={state}, installation_id={installation_id}, setup_action={setup_action}")
 
     # 1. 에러 처리
     if error:
@@ -99,8 +103,7 @@ def handler(event, context):
             print(f"No access token in response: {token_data}")
             return redirect_with_error("Failed to get access token from GitHub")
 
-        scopes = token_data.get('scope', '').split(',') if token_data.get('scope') else []
-        print(f"Access token obtained with scopes: {scopes}")
+        print(f"Access token obtained")
 
     except requests.exceptions.Timeout:
         print("GitHub API timeout")
@@ -123,39 +126,50 @@ def handler(event, context):
             return redirect_with_error("Failed to fetch user info from GitHub")
 
         github_user = user_response.json()
-
-        # 이메일 정보도 가져오기 (primary email)
-        emails_response = requests.get(
-            'https://api.github.com/user/emails',
-            headers={'Authorization': f'Bearer {access_token}'},
-            timeout=10
-        )
-
-        primary_email = github_user.get('email')
-        if emails_response.status_code == 200:
-            emails = emails_response.json()
-            primary_email = next(
-                (e['email'] for e in emails if e.get('primary')),
-                primary_email
-            )
-
         print(f"GitHub user fetched: {github_user['login']} (ID: {github_user['id']})")
 
     except Exception as e:
         print(f"Failed to fetch user info: {str(e)}")
         return redirect_with_error(f"Failed to fetch user info: {str(e)}")
 
-    # 5. GitHub Token 암호화
+    # 5. GitHub App installations 조회
     try:
-        encrypted_token = encrypt_token(access_token)
-        print("GitHub token encrypted successfully")
+        print("Fetching user installations...")
+        installations_response = requests.get(
+            'https://api.github.com/user/installations',
+            headers={
+                'Authorization': f'Bearer {access_token}',
+                'Accept': 'application/vnd.github+json'
+            },
+            timeout=10
+        )
+
+        if installations_response.status_code != 200:
+            print(f"Failed to fetch installations: {installations_response.status_code}")
+            installations_list = []
+        else:
+            installations_data = installations_response.json()
+            installations_list = installations_data.get('installations', [])
+            print(f"Found {len(installations_list)} installations")
+
     except Exception as e:
-        print(f"Failed to encrypt token: {str(e)}")
-        return redirect_with_error(f"Failed to encrypt token: {str(e)}")
+        print(f"Failed to fetch installations: {str(e)}")
+        installations_list = []
+
+    # GitHub 설치 완료 후 installation_id만 콜백 파라미터로 넘어오는 경우 보정
+    if not installations_list and installation_id:
+        print(f"No installations from API, but installation_id param provided: {installation_id}")
+        # 최소 필드만 채워서 저장 가능하도록 구조 보정
+        installations_list = [{
+            'id': installation_id,
+            'target_type': 'User',
+            'account': {},
+            'app_id': github_app_id or ''
+        }]
 
     # 6. DynamoDB에 사용자 저장/업데이트
     user_id = f"github_{github_user['id']}"
-    now = datetime.utcnow().isoformat() + 'Z'
+    current_timestamp = int(time.time())
 
     try:
         # 기존 사용자 확인
@@ -163,22 +177,17 @@ def handler(event, context):
 
         user_item = {
             'userId': user_id,
-            'githubId': github_user['id'],
+            'githubUserId': github_user['id'],
             'githubUsername': github_user['login'],
-            'githubEmail': primary_email,
-            'githubAvatarUrl': github_user.get('avatar_url', ''),
-            'githubToken': encrypted_token,
-            'githubScopes': scopes,
-            'lastLoginAt': now,
-            'updatedAt': now,
+            'updatedAt': current_timestamp,
         }
 
         # 신규 사용자인 경우에만 createdAt 설정
         if 'Item' not in existing_user:
-            user_item['createdAt'] = now
+            user_item['createdAt'] = current_timestamp
             print(f"Creating new user: {user_id}")
         else:
-            user_item['createdAt'] = existing_user['Item'].get('createdAt', now)
+            user_item['createdAt'] = existing_user['Item'].get('createdAt', current_timestamp)
             print(f"Updating existing user: {user_id}")
 
         users_table.put_item(Item=user_item)
@@ -188,7 +197,33 @@ def handler(event, context):
         print(f"Failed to save user: {str(e)}")
         return redirect_with_error(f"Failed to save user: {str(e)}")
 
-    # 7. JWT 토큰 생성
+    # 7. Installations 저장/업데이트
+    github_app_id = os.environ.get('GITHUB_APP_ID', '')
+
+    for installation in installations_list:
+        # 우리 앱의 installation만 저장
+        if github_app_id and str(installation.get('app_id')) != str(github_app_id):
+            continue
+
+        try:
+            install_id = str(installation['id'])
+            account = installation.get('account', {}) or {}
+
+            installation_item = {
+                'installationId': install_id,
+                'userId': user_id,
+                'accountLogin': account.get('login', ''),
+                'accountType': installation.get('target_type', 'User'),
+                'createdAt': current_timestamp,
+            }
+
+            installations_table.put_item(Item=installation_item)
+            print(f"Installation saved: {install_id} for {account.get('login')}")
+
+        except Exception as e:
+            print(f"Failed to save installation {installation.get('id')}: {str(e)}")
+
+    # 8. JWT 토큰 생성
     try:
         jwt_token = generate_jwt(user_id, github_user['login'])
         print(f"JWT token generated for {github_user['login']}")
@@ -196,7 +231,7 @@ def handler(event, context):
         print(f"Failed to generate JWT: {str(e)}")
         return redirect_with_error(f"Failed to generate JWT: {str(e)}")
 
-    # 8. 프론트엔드로 리다이렉트 (토큰 포함)
+    # 9. 프론트엔드로 리다이렉트 (토큰 포함)
     redirect_url = f'{redirect_uri}?token={jwt_token}&username={quote(github_user["login"])}'
 
     print(f"Redirecting to: {redirect_url}")
@@ -209,16 +244,6 @@ def handler(event, context):
         },
         'body': ''
     }
-
-
-def encrypt_token(token):
-    """KMS로 토큰 암호화"""
-    result = kms.encrypt(
-        KeyId=os.environ['KMS_KEY_ID'],
-        Plaintext=token.encode()
-    )
-    # Base64 인코딩하여 DynamoDB에 저장
-    return base64.b64encode(result['CiphertextBlob']).decode()
 
 
 def generate_jwt(user_id, username):
