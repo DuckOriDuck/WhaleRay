@@ -80,7 +80,7 @@ jobs:
       TF_VAR_acm_certificate_arn: ${{ vars.TF_VAR_ACM_CERTIFICATE_ARN }}
       TF_VAR_github_client_id: ${{ secrets.TF_VAR_GITHUB_CLIENT_ID }}
       TF_VAR_github_client_secret: ${{ secrets.TF_VAR_GITHUB_CLIENT_SECRET }}
-      TF_VAR_github_app_private_key : ${{secrets.TF_VAR_GITHUB_APP_PRIVATE_KEY}
+      TF_VAR_github_app_private_key : ${{secrets.TF_VAR_GITHUB_APP_PRIVATE_KEY}}
       TF_VAR_app_id : ${{env.TF_VAR_APP_ID}}
       TF_VAR_app_slug : ${{env.TF_VAR_APP_SLUG}}
       
