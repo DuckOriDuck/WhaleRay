@@ -1,20 +1,24 @@
 import { useState, useEffect } from 'react'
 import { isAuthenticated, getUser, loginWithGitHub, logout, handleAuthCallback } from './lib/auth'
+import { getMe } from './lib/api'
 import ServiceList from './components/ServiceList'
 import DeployForm from './components/DeployForm'
 import DeploymentHistory from './components/DeploymentHistory'
+import Setup from './components/Setup'
 
 function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('services')
+  const [needInstallation, setNeedInstallation] = useState(false)
+  const [installUrl, setInstallUrl] = useState('')
 
   useEffect(() => {
     // OAuth 콜백 처리 (URL에 token 파라미터가 있으면)
     const authResult = handleAuthCallback()
     if (authResult) {
       setUser(authResult)
-      setLoading(false)
+      checkInstallation()
       return
     }
 
@@ -22,10 +26,23 @@ function App() {
     if (isAuthenticated()) {
       const currentUser = getUser()
       setUser(currentUser)
+      checkInstallation()
+    } else {
+      setLoading(false)
     }
-
-    setLoading(false)
   }, [])
+
+  async function checkInstallation() {
+    try {
+      const data = await getMe()
+      setNeedInstallation(data.needInstallation || false)
+      setInstallUrl(data.installUrl || '')
+    } catch (err) {
+      console.error('Failed to check installation:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleSignIn = () => {
     loginWithGitHub()
@@ -125,6 +142,28 @@ function App() {
             GitHub 계정으로 간편하게 로그인하세요
           </p>
         </div>
+      </div>
+    )
+  }
+
+  // GitHub App 설치 필요
+  if (needInstallation) {
+    return (
+      <div>
+        <div className="header">
+          <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h1>WhaleRay</h1>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <span style={{ color: '#666' }}>
+                {user.username}
+              </span>
+              <button onClick={handleSignOut} className="btn btn-primary">
+                로그아웃
+              </button>
+            </div>
+          </div>
+        </div>
+        <Setup installUrl={installUrl} />
       </div>
     )
   }

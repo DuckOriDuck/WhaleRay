@@ -124,9 +124,11 @@ resource "aws_iam_role_policy" "lambda" {
 }
 
 data "archive_file" "deploy_lambda" {
+  depends_on  = [null_resource.clean_lambda_pycache]
   type        = "zip"
   source_dir  = "${path.module}/../lambda/deploy"
   output_path = "${path.module}/.terraform/lambda-deploy.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
 }
 
 resource "aws_lambda_function" "deploy" {
@@ -154,9 +156,19 @@ resource "aws_lambda_function" "deploy" {
 }
 
 data "archive_file" "manage_lambda" {
+  depends_on  = [null_resource.clean_lambda_pycache]
   type        = "zip"
   source_dir  = "${path.module}/../lambda/manage"
   output_path = "${path.module}/.terraform/lambda-manage.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
+}
+
+data "archive_file" "service_lambda" {
+  depends_on  = [null_resource.clean_lambda_pycache]
+  type        = "zip"
+  source_dir  = "${path.module}/../lambda/service"
+  output_path = "${path.module}/.terraform/lambda-service.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
 }
 
 resource "aws_lambda_function" "manage" {
@@ -178,11 +190,30 @@ resource "aws_lambda_function" "manage" {
   }
 }
 
+resource "aws_lambda_function" "service" {
+  filename      = data.archive_file.service_lambda.output_path
+  function_name = "${var.project_name}-service"
+  role          = aws_iam_role.lambda.arn
+  handler       = "handler.handler"
+  runtime       = "python3.11"
+  timeout       = 20
+
+  source_code_hash = data.archive_file.service_lambda.output_base64sha256
+
+  environment {
+    variables = {
+      SERVICES_TABLE = aws_dynamodb_table.services.name
+    }
+  }
+}
+
 # ECS Deployer Lambda
 data "archive_file" "ecs_deployer_lambda" {
+  depends_on  = [null_resource.clean_lambda_pycache]
   type        = "zip"
   source_dir  = "${path.module}/../lambda/ecs_deployer"
   output_path = "${path.module}/.terraform/lambda-ecs-deployer.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
 }
 
 resource "aws_lambda_function" "ecs_deployer" {
@@ -210,9 +241,11 @@ resource "aws_lambda_function" "ecs_deployer" {
 
 # Logs API Lambda
 data "archive_file" "logs_api_lambda" {
+  depends_on  = [null_resource.clean_lambda_pycache]
   type        = "zip"
   source_dir  = "${path.module}/../lambda/logs_api"
   output_path = "${path.module}/.terraform/lambda-logs-api.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
 }
 
 resource "aws_lambda_function" "logs_api" {
@@ -235,9 +268,11 @@ resource "aws_lambda_function" "logs_api" {
 
 # Repo Inspector Lambda (선택사항 - GitHub 연동 시 사용)
 data "archive_file" "repo_inspector_lambda" {
+  depends_on  = [null_resource.clean_lambda_pycache]
   type        = "zip"
   source_dir  = "${path.module}/../lambda/repo_inspector"
   output_path = "${path.module}/.terraform/lambda-repo-inspector.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
 }
 
 resource "aws_lambda_function" "repo_inspector" {
@@ -252,10 +287,10 @@ resource "aws_lambda_function" "repo_inspector" {
 
   environment {
     variables = {
-      DEPLOYMENTS_TABLE   = aws_dynamodb_table.deployments.name
-      USERS_TABLE         = aws_dynamodb_table.users.name
-      ECR_REPOSITORY_URL  = aws_ecr_repository.app_repo.repository_url
-      PROJECT_NAME        = var.project_name
+      DEPLOYMENTS_TABLE  = aws_dynamodb_table.deployments.name
+      USERS_TABLE        = aws_dynamodb_table.users.name
+      ECR_REPOSITORY_URL = aws_ecr_repository.app_repo.repository_url
+      PROJECT_NAME       = var.project_name
     }
   }
 }

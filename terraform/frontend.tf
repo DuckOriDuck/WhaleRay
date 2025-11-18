@@ -15,7 +15,7 @@ resource "aws_s3_bucket_website_configuration" "frontend" {
   }
 
   error_document {
-    key = "index.html"  # SPA 라우팅을 위해
+    key = "index.html" # SPA 라우팅을 위해
   }
 }
 
@@ -52,7 +52,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   enabled             = true
   is_ipv6_enabled     = true
   default_root_object = "index.html"
-  price_class         = "PriceClass_100"  # 북미, 유럽만
+  price_class         = "PriceClass_100" # 북미, 유럽만
   aliases             = [var.domain_name]
 
   origin {
@@ -115,53 +115,9 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 }
 
-# 프론트엔드 빌드 및 배포를 위한 null_resource
-# Windows 환경에서는 수동 배포를 권장합니다
-# terraform apply 후 아래 명령어로 수동 배포:
+# 프론트엔드 빌드 및 배포
+# 수동 배포 방법:
 # 1. cd frontend
-# 2. terraform output로 값 확인 후 src/config.js 수정
-# 3. npm install && npm run build
-# 4. aws s3 sync dist/ s3://버킷이름/ --delete
-# 5. aws cloudfront create-invalidation --distribution-id 배포ID --paths "/*"
-
-# resource "null_resource" "frontend_build_deploy" {
-#   triggers = {
-#     api_endpoint      = aws_apigatewayv2_api.main.api_endpoint
-#     cognito_pool_id   = aws_cognito_user_pool.main.id
-#     cognito_client_id = aws_cognito_user_pool_client.web.id
-#   }
-#
-#   provisioner "local-exec" {
-#     working_dir = "${path.module}/../frontend"
-#
-#     command = <<-EOT
-#       cat > src/config.js <<EOF
-# export const config = {
-#   region: '${var.aws_region}',
-#   cognito: {
-#     userPoolId: '${aws_cognito_user_pool.main.id}',
-#     userPoolClientId: '${aws_cognito_user_pool_client.web.id}',
-#     domain: '${aws_cognito_user_pool_domain.main.domain}'
-#   },
-#   apiEndpoint: '${aws_apigatewayv2_api.main.api_endpoint}',
-#   ecrRepositoryUrl: '${aws_ecr_repository.app_repo.repository_url}',
-#   albDns: '${aws_lb.main.dns_name}'
-# }
-# EOF
-#       npm install
-#       npm run build
-#       aws s3 sync dist/ s3://${aws_s3_bucket.frontend.bucket}/ --delete
-#       aws cloudfront create-invalidation --distribution-id ${aws_cloudfront_distribution.frontend.id} --paths "/*"
-#     EOT
-#
-#     interpreter = ["bash", "-c"]
-#   }
-#
-#   depends_on = [
-#     aws_s3_bucket.frontend,
-#     aws_cloudfront_distribution.frontend,
-#     aws_apigatewayv2_api.main,
-#     aws_cognito_user_pool.main,
-#     aws_cognito_user_pool_client.web
-#   ]
-# }
+# 2. npm install && npm run build
+# 3. aws s3 sync dist/ s3://버킷이름/ --delete
+# 4. aws cloudfront create-invalidation --distribution-id 배포ID --paths "/*"

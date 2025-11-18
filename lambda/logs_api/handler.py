@@ -15,7 +15,7 @@ def handler(event, context):
     배포 로그를 CloudWatch Logs에서 가져오는 Lambda 함수
     """
     try:
-        # Cognito authorizer에서 userId 추출
+        # JWT authorizer에서 userId 추출
         user_id = event['requestContext']['authorizer']['jwt']['claims']['sub']
 
         # Path parameter에서 deploymentId 추출

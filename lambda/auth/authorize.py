@@ -1,6 +1,6 @@
 """
-GitHub OAuth Authorize Lambda
-OAuth 플로우를 시작하고 GitHub 인증 페이지로 리다이렉트
+GitHub App Authorization Start
+GitHub App 설치 플로우를 시작하고 installation 선택 페이지로 리다이렉트
 """
 import json
 import uuid
@@ -15,13 +15,13 @@ states_table = dynamodb.Table(os.environ['OAUTH_STATES_TABLE'])
 
 def handler(event, context):
     """
-    GET /auth/github/authorize
+    GET /auth/github/start
 
     쿼리 파라미터:
     - redirect_uri: 인증 후 돌아갈 프론트엔드 URL (선택사항)
 
     Returns:
-    - 302 Redirect to GitHub OAuth page
+    - 302 Redirect to GitHub App installation page with OAuth
     """
 
     # 1. State 생성 (CSRF 방지)
@@ -50,7 +50,7 @@ def handler(event, context):
             'body': json.dumps({'error': 'Failed to initialize OAuth flow'})
         }
 
-    # 4. GitHub OAuth URL 생성
+    # 4. GitHub OAuth URL 생성 (앱 설치 여부와 무관하게 사용자 인증/동의 획득)
     github_oauth_params = {
         'client_id': os.environ['GITHUB_CLIENT_ID'],
         'redirect_uri': os.environ['GITHUB_CALLBACK_URL'],
@@ -61,7 +61,7 @@ def handler(event, context):
 
     github_oauth_url = 'https://github.com/login/oauth/authorize?' + urlencode(github_oauth_params)
 
-    print(f"Redirecting to GitHub OAuth: {github_oauth_url}")
+    print(f"Redirecting to GitHub OAuth authorize: {github_oauth_url}")
 
     # 5. GitHub OAuth 페이지로 리다이렉트
     return {
