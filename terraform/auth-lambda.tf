@@ -70,7 +70,7 @@ resource "aws_iam_role_policy" "lambda_auth" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = aws_secretsmanager_secret.jwt_secret.arn
+        Resource = data.aws_secretsmanager_secret.jwt_secret.arn
       }
     ]
   })
@@ -127,7 +127,7 @@ resource "aws_lambda_function" "auth_github_callback" {
       GITHUB_CALLBACK_URL  = "https://api.${var.domain_name}/auth/github/callback"
       FRONTEND_URL         = "https://${var.domain_name}"
       KMS_KEY_ID          = aws_kms_key.github_tokens.id
-      JWT_SECRET_ARN      = aws_secretsmanager_secret.jwt_secret.arn
+      JWT_SECRET_ARN      = data.aws_secretsmanager_secret.jwt_secret.arn
     }
   }
 
@@ -149,7 +149,7 @@ resource "aws_lambda_function" "auth_verify" {
 
   environment {
     variables = {
-      JWT_SECRET_ARN = aws_secretsmanager_secret.jwt_secret.arn
+      JWT_SECRET_ARN = data.aws_secretsmanager_secret.jwt_secret.arn
     }
   }
 
