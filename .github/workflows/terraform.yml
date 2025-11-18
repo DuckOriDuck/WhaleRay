@@ -33,7 +33,7 @@ jobs:
     env:
       AWS_REGION: ap-northeast-2
       TF_WORKING_DIR: terraform
-      
+
       # Terraform variables (TF_VAR_xxx → variable "xxx" { } 로 매핑)
       TF_VAR_acm_certificate_arn: ${{ vars.TF_VAR_ACM_CERTIFICATE_ARN }}
       TF_VAR_github_client_id: ${{ secrets.TF_VAR_GITHUB_CLIENT_ID }}
@@ -82,6 +82,5 @@ jobs:
             (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
             (github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true')
           )
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true')
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -input=false -auto-approve
