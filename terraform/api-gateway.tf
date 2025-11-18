@@ -45,7 +45,7 @@ resource "aws_apigatewayv2_authorizer" "lambda_jwt" {
   authorizer_payload_format_version = "2.0"
   enable_simple_responses           = false
   identity_sources                  = ["$request.header.Authorization"]
-  authorizer_result_ttl_in_seconds  = 300  # 5분 캐싱
+  authorizer_result_ttl_in_seconds  = 300 # 5분 캐싱
 }
 
 # ============================================================================
@@ -54,9 +54,9 @@ resource "aws_apigatewayv2_authorizer" "lambda_jwt" {
 
 # GitHub OAuth Authorize Integration
 resource "aws_apigatewayv2_integration" "auth_github_authorize" {
-  api_id             = aws_apigatewayv2_api.main.id
-  integration_type   = "AWS_PROXY"
-  integration_uri    = aws_lambda_function.auth_github_authorize.invoke_arn
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.auth_github_authorize.invoke_arn
   payload_format_version = "2.0"
 }
 
@@ -69,9 +69,9 @@ resource "aws_apigatewayv2_route" "auth_github_authorize" {
 
 # GitHub OAuth Callback Integration
 resource "aws_apigatewayv2_integration" "auth_github_callback" {
-  api_id             = aws_apigatewayv2_api.main.id
-  integration_type   = "AWS_PROXY"
-  integration_uri    = aws_lambda_function.auth_github_callback.invoke_arn
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.auth_github_callback.invoke_arn
   payload_format_version = "2.0"
 }
 

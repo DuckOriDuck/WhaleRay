@@ -257,10 +257,10 @@ resource "aws_lambda_function" "repo_inspector" {
 
   environment {
     variables = {
-      DEPLOYMENTS_TABLE   = aws_dynamodb_table.deployments.name
-      USERS_TABLE         = aws_dynamodb_table.users.name
-      ECR_REPOSITORY_URL  = aws_ecr_repository.app_repo.repository_url
-      PROJECT_NAME        = var.project_name
+      DEPLOYMENTS_TABLE  = aws_dynamodb_table.deployments.name
+      USERS_TABLE        = aws_dynamodb_table.users.name
+      ECR_REPOSITORY_URL = aws_ecr_repository.app_repo.repository_url
+      PROJECT_NAME       = var.project_name
     }
   }
 }

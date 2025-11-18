@@ -15,7 +15,7 @@ resource "aws_s3_bucket_website_configuration" "frontend" {
   }
 
   error_document {
-    key = "index.html"  # SPA 라우팅을 위해
+    key = "index.html" # SPA 라우팅을 위해
   }
 }
 
@@ -52,7 +52,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   enabled             = true
   is_ipv6_enabled     = true
   default_root_object = "index.html"
-  price_class         = "PriceClass_100"  # 북미, 유럽만
+  price_class         = "PriceClass_100" # 북미, 유럽만
   aliases             = [var.domain_name]
 
   origin {

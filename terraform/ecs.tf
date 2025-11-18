@@ -87,11 +87,11 @@ resource "aws_launch_template" "ecs_instance" {
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "ecs" {
-  name                = "${var.project_name}-ecs-asg"
-  vpc_zone_identifier = aws_subnet.private[*].id
-  min_size            = var.ecs_min_size
-  max_size            = var.ecs_max_size
-  desired_capacity    = var.ecs_desired_size
+  name                  = "${var.project_name}-ecs-asg"
+  vpc_zone_identifier   = aws_subnet.private[*].id
+  min_size              = var.ecs_min_size
+  max_size              = var.ecs_max_size
+  desired_capacity      = var.ecs_desired_size
   protect_from_scale_in = true
 
   launch_template {
@@ -124,8 +124,8 @@ resource "aws_ecs_capacity_provider" "ec2" {
     managed_termination_protection = "ENABLED"
 
     managed_scaling {
-      status          = "ENABLED"
-      target_capacity = 80
+      status                    = "ENABLED"
+      target_capacity           = 80
       minimum_scaling_step_size = 1
       maximum_scaling_step_size = 100
     }
