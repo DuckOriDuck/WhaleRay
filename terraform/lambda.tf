@@ -287,10 +287,19 @@ resource "aws_lambda_function" "repo_inspector" {
 
   environment {
     variables = {
-      DEPLOYMENTS_TABLE  = aws_dynamodb_table.deployments.name
-      USERS_TABLE        = aws_dynamodb_table.users.name
-      ECR_REPOSITORY_URL = aws_ecr_repository.app_repo.repository_url
-      PROJECT_NAME       = var.project_name
+      DEPLOYMENTS_TABLE          = aws_dynamodb_table.deployments.name
+      USERS_TABLE                = aws_dynamodb_table.users.name
+      ECR_REPOSITORY_URL         = aws_ecr_repository.app_repo.repository_url
+      PROJECT_NAME               = var.project_name
+      GITHUB_APP_PRIVATE_KEY_ARN = aws_secretsmanager_secret.github_app_private_key.arn
+      GITHUB_APP_ID              = var.github_app_id
     }
   }
+}
+
+resource "aws_lambda_event_source_mapping" "repo_inspector_deployments_stream" {
+  event_source_arn  = aws_dynamodb_table.deployments.stream_arn
+  function_name     = aws_lambda_function.repo_inspector.arn
+  starting_position = "LATEST"
+  batch_size        = 1
 }

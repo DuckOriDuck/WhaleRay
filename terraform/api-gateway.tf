@@ -192,6 +192,14 @@ resource "aws_apigatewayv2_route" "deployments_list" {
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
 }
 
+resource "aws_apigatewayv2_route" "deployments_create" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "POST /deployments"
+  target             = "integrations/${aws_apigatewayv2_integration.deploy.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+}
+
 # Logs API Integration
 resource "aws_lambda_permission" "logs_api" {
   statement_id  = "AllowAPIGatewayInvoke"

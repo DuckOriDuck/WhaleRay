@@ -69,6 +69,9 @@ resource "aws_dynamodb_table" "deployments" {
     type = "N"
   }
 
+  stream_enabled   = true
+  stream_view_type = "NEW_IMAGE"
+
   global_secondary_index {
     name            = "userId-index"
     hash_key        = "userId"

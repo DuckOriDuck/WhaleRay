@@ -121,7 +121,7 @@ aws cloudfront create-invalidation --distribution-id <dist-id> --paths "/*"
 
 ### 인증
 
-- `GET /auth/github/authorize` - GitHub OAuth 시작
+- `GET /auth/github/start` - GitHub OAuth 시작
 - `GET /auth/github/callback` - OAuth 콜백 + JWT 발급
 
 ### 서비스 관리 (JWT 필요)

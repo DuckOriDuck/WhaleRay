@@ -75,3 +75,4 @@ frontend/out/
 # Logs
 *.log
 logs/
+gemini.md
