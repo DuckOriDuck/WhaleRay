@@ -49,17 +49,15 @@ def handler(event, context):
 
     print(f"Using authorizer context user_id={user_id}")
 
-    # 2. Installations 테이블에서 사용자의 모든 설치 정보 조회
+    # 1. Installations 테이블에서 사용자의 모든 설치 정보 조회
     try:
+        from boto3.dynamodb.conditions import Key
         response = installations_table.query(
             IndexName='userId-index',
-            KeyConditionExpression='userId = :userId',
-            ExpressionAttributeValues={
-                ':userId': user_id
-            }
+            KeyConditionExpression=Key('userId').eq(user_id)
         )
         installations = response.get('Items', [])
-        print(f"Found {len(installations)} installation(s) for user {user_id}")
+        print(f"Found {len(installations)} installations for user {user_id}")
 
         if not installations:
             return _response(404, {'error': 'No GitHub App installation found for this user', 'repositories': []})
@@ -68,7 +66,7 @@ def handler(event, context):
         print(f"Failed to query installations: {str(e)}")
         return _response(500, {'error': 'Failed to query installations', 'repositories': []})
 
-    # 3. 모든 installations에서 repositories 수집
+    # 2. 모든 installations에서 repositories 수집
     all_repositories = []
     installations_to_delete = []
 
@@ -158,7 +156,7 @@ def handler(event, context):
             print(f"Error fetching repositories for installation {installation_id}: {str(e)}")
             continue
 
-    # 4. 무효한 installations 삭제
+    # 3. 무효한 installations 삭제
     for installation_id in installations_to_delete:
         try:
             installations_table.delete_item(Key={'installationId': installation_id})
@@ -166,7 +164,7 @@ def handler(event, context):
         except Exception as e:
             print(f"Failed to delete installation {installation_id}: {str(e)}")
 
-    # 5. 결과 반환
+    # 4. 결과 반환
     print(f"Returning {len(all_repositories)} total repositories from {len(installations) - len(installations_to_delete)} valid installations")
 
     return _response(200, {'repositories': all_repositories})

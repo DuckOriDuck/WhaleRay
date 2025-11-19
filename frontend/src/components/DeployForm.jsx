@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getGitHubRepositories, createDeployment } from '../lib/api'
+import { getUser } from '../lib/auth'
 
 export default function DeployForm() {
   const [repositories, setRepositories] = useState([])
@@ -116,12 +117,15 @@ export default function DeployForm() {
           </button>
           <button
             onClick={() => {
+              const user = getUser()
+              const userId = user ? user.username : 'unknown' // Using username as ID for now, or fetch real ID if available
+
               const width = 900
               const height = 700
               const left = (window.screen.width - width) / 2
               const top = (window.screen.height - height) / 2
               window.open(
-                'https://github.com/apps/whaleray/installations/select_target',
+                `https://github.com/apps/whaleray/installations/new?state=${userId}`,
                 'github_app_install',
                 `width=${width},height=${height},left=${left},top=${top},scrollbars=yes`
               )
