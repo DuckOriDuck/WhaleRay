@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getServices, getGitHubInstallationStatus } from '../lib/api'
 import { config } from '../config'
 
-export default function ServiceList({ onStartDeployment }) {
+export default function ServiceList() {
   const [services, setServices] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -116,7 +116,7 @@ export default function ServiceList({ onStartDeployment }) {
           첫 배포를 시작해보세요!
         </p>
         <button
-          onClick={onStartDeployment}
+          onClick={() => window.dispatchEvent(new CustomEvent('changeTab', { detail: 'deploy' }))}
           style={{
             padding: '12px 24px',
             backgroundColor: '#2563eb',
