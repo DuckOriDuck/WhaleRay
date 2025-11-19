@@ -33,22 +33,41 @@ def handler(event, context):
 
     쿼리 파라미터:
     - code: GitHub Authorization Code
-    - state: CSRF 방지용 state
+    - state: CSRF 방지용 state (OAuth만 필요)
     - installation_id: GitHub App Installation ID
-    - setup_action: "install" or "update"
+    - setup_action: "install" or "update" (GitHub App 설치 콜백시)
 
     Returns:
-    - 302 Redirect to frontend with JWT token
+    - 302 Redirect to frontend with JWT token (OAuth)
+    - 302 Redirect to frontend with installation params (GitHub App 설치)
     """
+    print(f"Callback received: {json.dumps(event)}")
 
     params = event.get('queryStringParameters') or {}
-    code = params.get('code')
-    state = params.get('state')
-    installation_id = params.get('installation_id')
+    
+    # GitHub App installation callback 처리
+    # setup_action이 있거나, installation_id는 있지만 state가 없으면 GitHub App 설치 콜백
     setup_action = params.get('setup_action')
+    installation_id = params.get('installation_id')
+    state = params.get('state')
+    
+    if setup_action or (installation_id and not state):
+        print(f"GitHub App installation callback detected: installation_id={installation_id}, setup_action={setup_action}")
+        redirect_url = f"{os.environ['FRONTEND_URL']}?installation_id={installation_id or ''}&setup_action={setup_action or 'install'}"
+        return {
+            'statusCode': 302,
+            'headers': {
+                'Location': redirect_url,
+                'Cache-Control': 'no-store'
+            },
+            'body': ''
+        }
+
+    # OAuth 콜백 처리
+    code = params.get('code')
     error = params.get('error')
 
-    print(f"Callback params: code={bool(code)}, state={state}, installation_id={installation_id}, setup_action={setup_action}")
+    print(f"OAuth callback: code={bool(code)}, state={state}, installation_id={installation_id}, setup_action={setup_action}")
 
     # 1. 에러 처리
     if error:
