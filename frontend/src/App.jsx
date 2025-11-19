@@ -1,27 +1,27 @@
 import { useState, useEffect } from 'react'
 import { isAuthenticated, getUser, loginWithGitHub, logout, handleAuthCallback } from './lib/auth'
-import { getMe } from './lib/api'
+import { getMe, getGitHubRepositories } from './lib/api'
 import ServiceList from './components/ServiceList'
 import DeployForm from './components/DeployForm'
 import DeploymentHistory from './components/DeploymentHistory'
-import Setup from './components/Setup'
 
 function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('services')
-  const [needInstallation, setNeedInstallation] = useState(false)
-  const [installUrl, setInstallUrl] = useState('')
+
+  // Repository state lifted from DeployForm
+  const [repositories, setRepositories] = useState([])
+  const [reposLoading, setReposLoading] = useState(false)
+  const [reposError, setReposError] = useState(null)
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
-    const pathname = window.location.pathname
 
     // GitHub App 설정 완료 감지 (setup_action 또는 installation_id 파라미터 확인)
     const isGitHubAppCallback =
       urlParams.has('setup_action') ||
-      urlParams.has('installation_id') ||
-      pathname === '/setup'
+      urlParams.has('installation_id')
 
     // 에러 파라미터가 있고 팝업 창인 경우 (GitHub App callback 에러 포함)
     const hasErrorParam = urlParams.has('error')
@@ -42,8 +42,6 @@ function App() {
       // 짧은 지연 후 창 닫기 (메시지 전송 완료 보장)
       setTimeout(() => {
         window.close()
-        // window.close()가 실패할 수 있으므로 사용자에게 안내
-        setLoading(false)
       }, 500)
       return
     }
@@ -52,7 +50,9 @@ function App() {
     const authResult = handleAuthCallback()
     if (authResult) {
       setUser(authResult)
-      checkInstallation()
+      setLoading(false)
+      // 로그인 직후 리포지토리 로드
+      loadRepositories()
       return
     }
 
@@ -60,21 +60,25 @@ function App() {
     if (isAuthenticated()) {
       const currentUser = getUser()
       setUser(currentUser)
-      checkInstallation()
+      setLoading(false)
+      // 초기 로드 시 리포지토리 로드
+      loadRepositories()
     } else {
       setLoading(false)
     }
   }, [])
 
-  async function checkInstallation() {
+  async function loadRepositories() {
+    setReposLoading(true)
+    setReposError(null)
+
     try {
-      const data = await getMe()
-      setNeedInstallation(data.needInstallation || false)
-      setInstallUrl(data.installUrl || '')
+      const data = await getGitHubRepositories()
+      setRepositories(data.repositories || [])
     } catch (err) {
-      console.error('Failed to check installation:', err)
+      setReposError(err.message)
     } finally {
-      setLoading(false)
+      setReposLoading(false)
     }
   }
 
@@ -85,6 +89,7 @@ function App() {
   const handleSignOut = () => {
     logout()
     setUser(null)
+    setRepositories([])
   }
 
   // Loading state
@@ -108,7 +113,6 @@ function App() {
   // Popup closing state (GitHub App installation callback)
   const urlParams = new URLSearchParams(window.location.search)
   if (window.opener && (
-    window.location.pathname === '/setup' ||
     urlParams.has('setup_action') ||
     urlParams.has('installation_id') ||
     urlParams.has('error')
@@ -227,28 +231,6 @@ function App() {
     )
   }
 
-  // GitHub App 설치 필요
-  if (needInstallation) {
-    return (
-      <div>
-        <div className="header">
-          <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h1>WhaleRay</h1>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <span style={{ color: '#666' }}>
-                {user.username}
-              </span>
-              <button onClick={handleSignOut} className="btn btn-primary">
-                로그아웃
-              </button>
-            </div>
-          </div>
-        </div>
-        <Setup installUrl={installUrl} />
-      </div>
-    )
-  }
-
   // Main dashboard
   return (
     <div>
@@ -314,8 +296,19 @@ function App() {
           </div>
         </div>
 
-        {activeTab === 'services' && <ServiceList />}
-        {activeTab === 'deploy' && <DeployForm />}
+        {activeTab === 'services' && (
+          <ServiceList
+            onStartDeployment={() => setActiveTab('deploy')}
+          />
+        )}
+        {activeTab === 'deploy' && (
+          <DeployForm
+            repositories={repositories}
+            loading={reposLoading}
+            error={reposError}
+            onLoadRepositories={loadRepositories}
+          />
+        )}
         {activeTab === 'history' && <DeploymentHistory />}
       </div>
     </div>
