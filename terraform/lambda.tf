@@ -44,7 +44,10 @@ resource "aws_iam_role_policy" "lambda" {
           aws_dynamodb_table.deployments.arn,
           "${aws_dynamodb_table.deployments.arn}/index/*",
           aws_dynamodb_table.services.arn,
-          "${aws_dynamodb_table.services.arn}/index/*"
+          "${aws_dynamodb_table.services.arn}/index/*",
+          # [ADDED] installations 테이블 접근 권한 추가
+          aws_dynamodb_table.installations.arn,
+          "${aws_dynamodb_table.installations.arn}/index/*"
         ]
       },
       {
@@ -118,6 +121,12 @@ resource "aws_iam_role_policy" "lambda" {
           "codebuild:BatchGetBuilds"
         ]
         Resource = "arn:aws:codebuild:*:*:project/${var.project_name}-*"
+      },
+      # [ADDED] repo_inspector 람다를 호출할 수 있는 권한 추가
+      {
+        Effect = "Allow"
+        Action = "lambda:InvokeFunction"
+        Resource = aws_lambda_function.repo_inspector.arn
       }
     ]
   })
@@ -143,14 +152,17 @@ resource "aws_lambda_function" "deploy" {
 
   environment {
     variables = {
-      CLUSTER_NAME        = aws_ecs_cluster.main.name
-      DEPLOYMENTS_TABLE   = aws_dynamodb_table.deployments.name
-      SERVICES_TABLE      = aws_dynamodb_table.services.name
-      TASK_EXECUTION_ROLE = aws_iam_role.ecs_task_execution.arn
-      TASK_ROLE           = aws_iam_role.ecs_task.arn
-      SUBNETS             = join(",", aws_subnet.private[*].id)
-      SECURITY_GROUPS     = aws_security_group.ecs_tasks.id
-      TARGET_GROUP_ARN    = aws_lb_target_group.default.arn
+      FRONTEND_URL                 = "https://${var.domain_name}"
+      REPO_INSPECTOR_FUNCTION_NAME = aws_lambda_function.repo_inspector.function_name
+      INSTALLATIONS_TABLE          = aws_dynamodb_table.installations.name
+      CLUSTER_NAME                 = aws_ecs_cluster.main.name
+      DEPLOYMENTS_TABLE            = aws_dynamodb_table.deployments.name
+      SERVICES_TABLE               = aws_dynamodb_table.services.name
+      TASK_EXECUTION_ROLE          = aws_iam_role.ecs_task_execution.arn
+      TASK_ROLE                    = aws_iam_role.ecs_task.arn
+      SUBNETS                      = join(",", aws_subnet.private[*].id)
+      SECURITY_GROUPS              = aws_security_group.ecs_tasks.id
+      TARGET_GROUP_ARN             = aws_lb_target_group.default.arn
     }
   }
 }
@@ -183,6 +195,7 @@ resource "aws_lambda_function" "manage" {
 
   environment {
     variables = {
+      FRONTEND_URL      = "https://${var.domain_name}"
       DEPLOYMENTS_TABLE = aws_dynamodb_table.deployments.name
       SERVICES_TABLE    = aws_dynamodb_table.services.name
       USERS_TABLE       = aws_dynamodb_table.users.name
@@ -295,11 +308,4 @@ resource "aws_lambda_function" "repo_inspector" {
       GITHUB_APP_ID              = var.github_app_id
     }
   }
-}
-
-resource "aws_lambda_event_source_mapping" "repo_inspector_deployments_stream" {
-  event_source_arn  = aws_dynamodb_table.deployments.stream_arn
-  function_name     = aws_lambda_function.repo_inspector.arn
-  starting_position = "LATEST"
-  batch_size        = 1
 }

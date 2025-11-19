@@ -5,7 +5,6 @@ GitHub App 설치 후 OAuth 콜백을 처리하고 JWT 토큰 발급
 import json
 import os
 import time
-import base64
 import uuid
 from datetime import datetime, timedelta
 from urllib.parse import quote
@@ -34,122 +33,22 @@ def handler(event, context):
 
     쿼리 파라미터:
     - code: GitHub Authorization Code
-    - state: CSRF 방지용 state (OAuth만 필요)
+    - state: CSRF 방지용 state
     - installation_id: GitHub App Installation ID
-    - setup_action: "install" or "update" (GitHub App 설치 콜백시)
+    - setup_action: "install" or "update"
 
     Returns:
-    - 302 Redirect to frontend with JWT token (OAuth)
-    - 302 Redirect to frontend with installation params (GitHub App 설치)
+    - 302 Redirect to frontend with JWT token
     """
-    print(f"Callback received: {json.dumps(event)}")
 
     params = event.get('queryStringParameters') or {}
-    
-    # GitHub App installation callback 처리
-    # setup_action이 있거나, installation_id는 있지만 state가 없으면 GitHub App 설치 콜백
-    setup_action = params.get('setup_action')
-    installation_id = params.get('installation_id')
-    state = params.get('state')
-    
-    if setup_action or (installation_id and not state):
-        # state가 있으면 우리가 보낸 설치 요청임 (동기화 수행)
-        if state:
-            print(f"GitHub App installation callback with state detected: installation_id={installation_id}, state={state}")
-            try:
-                # state is github_username passed from frontend
-                github_username = state
-                print(f"Syncing installations for username: {github_username}")
-                
-                # 1. Find user by githubUsername
-                # Since we don't have a GSI on githubUsername yet, we'll scan (inefficient but works for now)
-                # TODO: Add GSI for githubUsername
-                scan_response = users_table.scan(
-                    FilterExpression=boto3.dynamodb.conditions.Attr('githubUsername').eq(github_username)
-                )
-                items = scan_response.get('Items', [])
-                
-                if not items:
-                    print(f"User not found for username: {github_username}")
-                else:
-                    user_item = items[0]
-                    user_id = user_item['userId']
-                    print(f"Found user {user_id} for username {github_username}")
-                    
-                    if user_item.get('githubToken'):
-                        # 2. Decrypt token
-                        encrypted_token = user_item.get('githubToken')
-                        kms = boto3.client('kms')
-                        kms_key_id = os.environ.get('KMS_KEY_ID')
-                        
-                        ciphertext = base64.b64decode(encrypted_token)
-                        decrypt_result = kms.decrypt(
-                            CiphertextBlob=ciphertext,
-                            KeyId=kms_key_id
-                        )
-                        access_token = decrypt_result['Plaintext'].decode()
-
-                        # 3. Fetch installations from GitHub
-                        gh_response = requests.get(
-                            'https://api.github.com/user/installations',
-                            headers={
-                                'Authorization': f'Bearer {access_token}',
-                                'Accept': 'application/vnd.github+json'
-                            },
-                            timeout=5
-                        )
-
-                        if gh_response.status_code == 200:
-                            installations_data = gh_response.json()
-                            github_installations = installations_data.get('installations', [])
-                            print(f"Fetched {len(github_installations)} installations from GitHub")
-
-                            github_app_id = os.environ.get('GITHUB_APP_ID', '')
-                            current_timestamp = int(time.time())
-                            current_timestamp = int(time.time())
-
-                            for installation in github_installations:
-                                if github_app_id and str(installation.get('app_id')) != str(github_app_id):
-                                    continue
-
-                                install_id = str(installation['id'])
-                                account = installation.get('account', {}) or {}
-
-                                installation_item = {
-                                    'installationId': install_id,
-                                    'userId': user_id,
-                                    'accountLogin': account.get('login', ''),
-                                    'accountType': installation.get('target_type', 'User'),
-                                    'createdAt': current_timestamp,
-                                    'updatedAt': current_timestamp
-                                }
-                                
-                                installations_table.put_item(Item=installation_item)
-                                print(f"Synced installation {install_id} for {account.get('login')}")
-                        else:
-                            print(f"Failed to fetch installations: {gh_response.status_code}")
-                    else:
-                        print("No GitHub token found for user")
-
-            except Exception as e:
-                print(f"Error syncing installation in callback: {str(e)}")
-
-        print(f"GitHub App installation callback detected: installation_id={installation_id}, setup_action={setup_action}")
-        redirect_url = f"{os.environ['FRONTEND_URL']}?installation_id={installation_id or ''}&setup_action={setup_action or 'install'}"
-        return {
-            'statusCode': 302,
-            'headers': {
-                'Location': redirect_url,
-                'Cache-Control': 'no-store'
-            },
-            'body': ''
-        }
-
-    # OAuth 콜백 처리
     code = params.get('code')
+    state = params.get('state')
+    installation_id = params.get('installation_id')
+    setup_action = params.get('setup_action')
     error = params.get('error')
 
-    print(f"OAuth callback: code={bool(code)}, state={state}, installation_id={installation_id}, setup_action={setup_action}")
+    print(f"Callback params: code={bool(code)}, state={state}, installation_id={installation_id}, setup_action={setup_action}")
 
     # 1. 에러 처리
     if error:
@@ -282,22 +181,6 @@ def handler(event, context):
             'githubUsername': github_user['login'],
             'updatedAt': current_timestamp,
         }
-
-        # GitHub Token 암호화 및 저장
-        try:
-            kms = boto3.client('kms')
-            kms_key_id = os.environ.get('KMS_KEY_ID')
-            if kms_key_id:
-                encrypted_token = kms.encrypt(
-                    KeyId=kms_key_id,
-                    Plaintext=access_token.encode()
-                )
-                user_item['githubToken'] = base64.b64encode(encrypted_token['CiphertextBlob']).decode()
-                print("GitHub token encrypted and added to user item")
-            else:
-                print("WARNING: KMS_KEY_ID not set, skipping token encryption")
-        except Exception as e:
-            print(f"Failed to encrypt token: {str(e)}")
 
         # 신규 사용자인 경우에만 createdAt 설정
         if 'Item' not in existing_user:
