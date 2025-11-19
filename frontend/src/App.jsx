@@ -1,24 +1,58 @@
 import { useState, useEffect } from 'react'
 import { isAuthenticated, getUser, loginWithGitHub, logout, handleAuthCallback } from './lib/auth'
-import { getMe } from './lib/api'
+import { getMe, getGitHubRepositories } from './lib/api'
 import ServiceList from './components/ServiceList'
 import DeployForm from './components/DeployForm'
 import DeploymentHistory from './components/DeploymentHistory'
-import Setup from './components/Setup'
 
 function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('services')
-  const [needInstallation, setNeedInstallation] = useState(false)
-  const [installUrl, setInstallUrl] = useState('')
+
+  // Repository state lifted from DeployForm
+  const [repositories, setRepositories] = useState([])
+  const [reposLoading, setReposLoading] = useState(false)
+  const [reposError, setReposError] = useState(null)
 
   useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+
+    // GitHub App 설정 완료 감지 (setup_action 또는 installation_id 파라미터 확인)
+    const isGitHubAppCallback =
+      urlParams.has('setup_action') ||
+      urlParams.has('installation_id')
+
+    // 에러 파라미터가 있고 팝업 창인 경우 (GitHub App callback 에러 포함)
+    const hasErrorParam = urlParams.has('error')
+
+    // 팝업 창이고 GitHub App 설정 콜백인 경우 또는 에러가 있는 경우
+    if (window.opener && (isGitHubAppCallback || hasErrorParam)) {
+      console.log('GitHub App 설정 완료/에러 감지 - 팝업 닫기', {
+        isGitHubAppCallback,
+        hasErrorParam,
+        error: urlParams.get('error')
+      })
+
+      // 부모 창에 메시지 전송
+      if (!window.opener.closed) {
+        window.opener.postMessage('github-app-config-complete', window.location.origin)
+      }
+
+      // 짧은 지연 후 창 닫기 (메시지 전송 완료 보장)
+      setTimeout(() => {
+        window.close()
+      }, 500)
+      return
+    }
+
     // OAuth 콜백 처리 (URL에 token 파라미터가 있으면)
     const authResult = handleAuthCallback()
     if (authResult) {
       setUser(authResult)
-      checkInstallation()
+      setLoading(false)
+      // 로그인 직후 리포지토리 로드
+      loadRepositories()
       return
     }
 
@@ -26,21 +60,25 @@ function App() {
     if (isAuthenticated()) {
       const currentUser = getUser()
       setUser(currentUser)
-      checkInstallation()
+      setLoading(false)
+      // 초기 로드 시 리포지토리 로드
+      loadRepositories()
     } else {
       setLoading(false)
     }
   }, [])
 
-  async function checkInstallation() {
+  async function loadRepositories() {
+    setReposLoading(true)
+    setReposError(null)
+
     try {
-      const data = await getMe()
-      setNeedInstallation(data.needInstallation || false)
-      setInstallUrl(data.installUrl || '')
+      const data = await getGitHubRepositories()
+      setRepositories(data.repositories || [])
     } catch (err) {
-      console.error('Failed to check installation:', err)
+      setReposError(err.message)
     } finally {
-      setLoading(false)
+      setReposLoading(false)
     }
   }
 
@@ -51,6 +89,7 @@ function App() {
   const handleSignOut = () => {
     logout()
     setUser(null)
+    setRepositories([])
   }
 
   // Loading state
@@ -67,6 +106,52 @@ function App() {
           <h2 style={{ color: '#1a73e8' }}>WhaleRay</h2>
           <p style={{ color: '#666' }}>로딩 중...</p>
         </div>
+      </div>
+    )
+  }
+
+  // Popup closing state (GitHub App installation callback)
+  const urlParams = new URLSearchParams(window.location.search)
+  if (window.opener && (
+    urlParams.has('setup_action') ||
+    urlParams.has('installation_id') ||
+    urlParams.has('error')
+  )) {
+    const errorMessage = urlParams.get('error')
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        background: '#f5f5f5',
+        flexDirection: 'column',
+        gap: '16px'
+      }}>
+        {errorMessage ? (
+          <>
+            <p style={{ color: '#d32f2f', fontSize: '16px', maxWidth: '500px', textAlign: 'center' }}>
+              {decodeURIComponent(errorMessage)}
+            </p>
+            <p style={{ color: '#666', fontSize: '14px' }}>창을 닫습니다...</p>
+          </>
+        ) : (
+          <p style={{ color: '#666', fontSize: '16px' }}>설정이 완료되었습니다. 창을 닫습니다...</p>
+        )}
+        <button
+          onClick={() => window.close()}
+          style={{
+            padding: '8px 16px',
+            background: '#1a73e8',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '14px'
+          }}
+        >
+          창이 자동으로 닫히지 않으면 여기를 클릭하세요
+        </button>
       </div>
     )
   }
@@ -146,28 +231,6 @@ function App() {
     )
   }
 
-  // GitHub App 설치 필요
-  if (needInstallation) {
-    return (
-      <div>
-        <div className="header">
-          <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h1>WhaleRay</h1>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <span style={{ color: '#666' }}>
-                {user.username}
-              </span>
-              <button onClick={handleSignOut} className="btn btn-primary">
-                로그아웃
-              </button>
-            </div>
-          </div>
-        </div>
-        <Setup installUrl={installUrl} />
-      </div>
-    )
-  }
-
   // Main dashboard
   return (
     <div>
@@ -233,8 +296,19 @@ function App() {
           </div>
         </div>
 
-        {activeTab === 'services' && <ServiceList />}
-        {activeTab === 'deploy' && <DeployForm />}
+        {activeTab === 'services' && (
+          <ServiceList
+            onStartDeployment={() => setActiveTab('deploy')}
+          />
+        )}
+        {activeTab === 'deploy' && (
+          <DeployForm
+            repositories={repositories}
+            loading={reposLoading}
+            error={reposError}
+            onLoadRepositories={loadRepositories}
+          />
+        )}
         {activeTab === 'history' && <DeploymentHistory />}
       </div>
     </div>

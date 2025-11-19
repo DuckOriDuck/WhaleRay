@@ -46,7 +46,8 @@ resource "aws_iam_role_policy" "lambda_auth" {
           "dynamodb:PutItem",
           "dynamodb:UpdateItem",
           "dynamodb:DeleteItem",
-          "dynamodb:Query"
+          "dynamodb:Query",
+          "dynamodb:Scan"
         ]
         Resource = [
           aws_dynamodb_table.users.arn,
@@ -194,6 +195,7 @@ resource "aws_lambda_function" "auth_github_callback" {
       FRONTEND_URL         = "https://${var.domain_name}"
       GITHUB_APP_ID        = var.github_app_id
       JWT_SECRET_ARN       = aws_secretsmanager_secret.jwt_secret.arn
+      KMS_KEY_ID           = aws_kms_key.github_tokens.id
     }
   }
 
@@ -357,6 +359,8 @@ resource "aws_lambda_function" "github_repositories" {
       INSTALLATIONS_TABLE        = aws_dynamodb_table.installations.name
       GITHUB_APP_ID              = var.github_app_id
       GITHUB_APP_PRIVATE_KEY_ARN = aws_secretsmanager_secret.github_app_private_key.arn
+      USERS_TABLE                = aws_dynamodb_table.users.name
+      KMS_KEY_ID                 = aws_kms_key.github_tokens.id
     }
   }
 
