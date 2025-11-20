@@ -34,6 +34,7 @@ def handler(event, context):
     branch = event.get('branch', 'main')
     installation_id = event['installationId']
     
+    framework = None # 오류 로깅을 위해 프레임워크 변수 미리 선언
     try:
         # 1. GitHub App 설치 액세스 토큰 생성
         installation_access_token = get_installation_access_token(installation_id)
@@ -42,16 +43,20 @@ def handler(event, context):
         framework = detect_framework(repository_full_name, branch, installation_access_token)
         
         if not framework:
-            raise ValueError(f"Could not detect a supported framework for repository {repository_full_name}.")
+            # 지원하지 않는 프레임워크는 실패가 아닌 별도 상태로 처리
+            print(f"Unsupported framework for repository {repository_full_name}. Setting status to NOT_SUPPORTED.")
+            _update_deployment_status(deployment_id, 'NOT_SUPPORTED', framework=framework)
+            return {'status': 'NOT_SUPPORTED'}
 
         # 3. 프레임워크에 맞는 CodeBuild 프로젝트 선택
         codebuild_project = select_codebuild_project(framework)
 
+        # select_codebuild_project가 None을 반환하는 경우는 현재 로직상 없지만, 방어 코드 추가
         if not codebuild_project:
             print(f"Unsupported framework '{framework}' for repository {repository_full_name}. Setting status to NOT_SUPPORTED.")
-            deployments_table.update_item(
-                Key={'deploymentId': deployment_id},
-                UpdateExpression='SET #status = :status, updatedAt = :updatedAt, framework = :framework',
+            _update_deployment_status(
+                deployment_id,
+                'NOT_SUPPORTED',
                 ExpressionAttributeNames={'#status': 'status'},
                 ExpressionAttributeValues={
                     ':status': 'NOT_SUPPORTED',
@@ -63,17 +68,12 @@ def handler(event, context):
 
         # 4. 배포 상태를 'BUILDING'으로 업데이트 (피드백 반영)
         # 실제 CodeBuild 실행 로직은 생략하고 상태만 업데이트합니다.
+        # TODO 여기에 Codebuild 실행 로직 들어갈 예정
         print(f"Framework '{framework}' detected. Updating status to BUILDING for deployment {deployment_id}.")
-        deployments_table.update_item(
-            Key={'deploymentId': deployment_id},
-            UpdateExpression='SET #status = :status, framework = :framework, codebuildProject = :codebuildProject, updatedAt = :updatedAt',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={
-                ':status': 'BUILDING',
-                ':framework': framework,
-                ':codebuildProject': codebuild_project,
-                ':updatedAt': int(time.time())
-            }
+        _update_deployment_status(
+            deployment_id, 'BUILDING',
+            framework=framework,
+            codebuild_project=codebuild_project
         )
         print(f"Successfully updated status to BUILDING for deployment {deployment_id}")
         
@@ -85,24 +85,11 @@ def handler(event, context):
     except Exception as e:
         print(f"Error processing deployment {deployment_id}: {str(e)}")
         import traceback
-        traceback.print_exc()
+        error_message = traceback.format_exc()
+        print(error_message)
         # 오류 발생 시 Deployment 상태를 FAILED로 업데이트
-        try:
-            deployments_table.update_item(
-                Key={'deploymentId': deployment_id},
-                UpdateExpression='SET #status = :status, errorMessage = :errorMessage, updatedAt = :updatedAt',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':status': 'FAILED',
-                    ':errorMessage': str(e),
-                    ':updatedAt': int(time.time())
-                }
-            )
-        except Exception as update_e:
-            print(f"Failed to update deployment {deployment_id} status to FAILED: {str(update_e)}")
-        
-        # 에러를 발생시켜 호출 측에서 인지할 수 있도록 함
-        raise e
+        _update_deployment_status(deployment_id, 'FAILED', error_message=str(e), framework=framework)
+        raise # 람다 재시도를 위해 에러를 다시 발생시킴
 
 
 def detect_framework(repository_full_name: str, branch: str, github_token: str) -> Optional[str]:
@@ -147,6 +134,39 @@ def select_codebuild_project(framework: str) -> Optional[str]:
     return mapping.get(framework)
 
 
+def _update_deployment_status(deployment_id: str, status: str, **kwargs):
+    """
+    DynamoDB의 배포 상태를 업데이트하는 헬퍼 함수
+    """
+    print(f"Updating deployment {deployment_id} to status {status} with details: {kwargs}")
+    try:
+        update_expression = 'SET #status = :status, updatedAt = :updatedAt'
+        expression_attribute_names = {'#status': 'status'}
+        expression_attribute_values = {
+            ':status': status,
+            ':updatedAt': int(time.time())
+        }
+
+        # 추가적인 속성들을 동적으로 처리
+        for key, value in kwargs.items():
+            if value is not None:
+                attr_name_key = f'#{key}'
+                attr_value_key = f':{key}'
+                update_expression += f', {attr_name_key} = {attr_value_key}'
+                expression_attribute_names[attr_name_key] = key
+                expression_attribute_values[attr_value_key] = value
+
+        deployments_table.update_item(
+            Key={'deploymentId': deployment_id},
+            UpdateExpression=update_expression,
+            ExpressionAttributeNames=expression_attribute_names,
+            ExpressionAttributeValues=expression_attribute_values
+        )
+        print(f"Successfully updated deployment {deployment_id} status to {status}.")
+    except Exception as e:
+        print(f"CRITICAL: Failed to update deployment {deployment_id} status to {status}. Error: {str(e)}")
+
+
 def get_secret(secret_id: str) -> str:
     """
     Secrets Manager에서 시크릿 가져오기
@@ -189,4 +209,3 @@ def get_installation_access_token(installation_id: str) -> str:
     except Exception as e:
         print(f"Error generating installation access token for installation {installation_id}: {e}")
         raise
-
