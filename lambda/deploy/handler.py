@@ -138,3 +138,39 @@ def _response(status_code, body):
         },
         'body': json.dumps(body)
     }
+
+
+def cleanup_orphan_deployments(user_id: str):
+    """
+    특정 사용자의 배포 중, 30분 이상 진행중인 상태에 머물러 있는 '고아' 배포를 찾아 실패 처리합니다.
+    """
+    print(f"Starting cleanup of orphan deployments for user: {user_id}...")
+    try:
+        timeout_threshold = int(time.time()) - 1800  # 30분 전
+        in_progress_statuses = ['INSPECTING', 'BUILDING', 'DEPLOYING']
+
+        # GSI를 사용하여 특정 사용자의 배포만 효율적으로 쿼리
+        response = deployments_table.query(
+            IndexName='userId-index',
+            KeyConditionExpression='userId = :userId',
+            FilterExpression=boto3.dynamodb.conditions.Attr('status').is_in(in_progress_statuses),
+            ExpressionAttributeValues={':userId': user_id}
+        )
+
+        orphan_deployments = []
+        for item in response.get('Items', []):
+            if item.get('updatedAt', 0) < timeout_threshold:
+                orphan_deployments.append(item)
+
+        if not orphan_deployments:
+            print("No orphan deployments found.")
+            return
+
+        print(f"Found {len(orphan_deployments)} orphan deployments to fail.")
+        for deployment in orphan_deployments:
+            deployment_id = deployment['deploymentId']
+            current_status = deployment['status']
+            update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, f"{current_status}_TIMEOUT", errorMessage="Deployment timed out.")
+
+    except Exception as e:
+        print(f"An error occurred during orphan deployment cleanup: {str(e)}")

@@ -4,6 +4,9 @@ import boto3
 import time
 
 ecs = boto3.client('ecs')
+# Lambda Layer에서 공통 유틸리티 함수 가져오기
+from github_utils import update_deployment_status
+
 dynamodb = boto3.resource('dynamodb')
 
 CLUSTER_NAME = os.environ['CLUSTER_NAME']
@@ -55,15 +58,10 @@ def handler(event, context):
 
         # 빌드 실패 처리
         if build_status == 'FAILED':
-            deployments_table.update_item(
-                Key={'deploymentId': deployment_id},
-                UpdateExpression='SET #status = :status, updatedAt = :updatedAt, errorMessage = :errorMessage',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':status': 'BUILD_FAILED',
-                    ':updatedAt': int(time.time()),
-                    ':errorMessage': f"CodeBuild build failed. See build logs for details (Build ID: {build_id})."
-                }
+            update_deployment_status(
+                DEPLOYMENTS_TABLE,
+                deployment_id,
+                'BUILDING_FAIL'
             )
             print(f"Deployment {deployment_id} status updated to BUILD_FAILED.")
             return {'statusCode': 200, 'body': 'Build failed, deployment aborted'}
@@ -72,6 +70,9 @@ def handler(event, context):
         service_name = deployment.get('serviceName')
         user_id = deployment.get('userId')
         port = deployment.get('port', 3000)
+
+        # 실제 배포 시작 전 상태를 DEPLOYING으로 변경
+        update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'DEPLOYING')
 
         print("Build Succeeded! Starting deployment process...")
         print(f"Deployment ID: {deployment_id}")
@@ -93,15 +94,10 @@ def handler(event, context):
 
         # 배포 실패 기록
         if 'deployment_id' in locals():
-            deployments_table.update_item(
-                Key={'deploymentId': deployment_id},
-                UpdateExpression='SET #status = :status, errorMessage = :error, updatedAt = :updatedAt',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':status': 'DEPLOY_FAILED',
-                    ':error': str(e),
-                    ':updatedAt': int(time.time())
-                }
+            update_deployment_status(
+                DEPLOYMENTS_TABLE,
+                deployment_id,
+                'DEPLOYING_FAIL'
             )
 
         return {

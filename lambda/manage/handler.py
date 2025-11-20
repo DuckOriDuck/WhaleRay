@@ -3,6 +3,10 @@ import os
 import boto3
 from boto3.dynamodb.conditions import Key
 import decimal
+import time
+
+# Lambda Layer에서 공통 유틸리티 함수 가져오기
+from github_utils import update_deployment_status
 
 # --- Helper for JSON serialization ---
 class DecimalEncoder(json.JSONEncoder):
@@ -97,13 +101,18 @@ def handler(event, context):
         # GET /deployments - 모든 배포 조회
         elif route_key == 'GET /deployments':
             limit = int(query_params.get('limit', 20))
+
             response = deployments_table.query(
                 IndexName='userId-index',
                 KeyConditionExpression=Key('userId').eq(user_id),
                 ScanIndexForward=False,
                 Limit=limit
             )
-            return _response(200, {'deployments': response.get('Items', [])})
+            deployments = response.get('Items', [])
+
+
+            updated_deployments = cleanup_orphan_deployments(deployments)
+            return _response(200, {'deployments': updated_deployments})
 
         else:
             return _response(404, {'error': 'Route not found'})
@@ -116,3 +125,34 @@ def handler(event, context):
             'error': 'Internal server error',
             'message': str(e)
         })
+
+
+def cleanup_orphan_deployments(deployments: list) -> list:
+    """
+    주어진 배포 목록에서 30분 이상 진행중인 orphan deployment resource를 찾아 상태를 업데이트하고,
+    업데이트된 목록을 반환합.
+    """
+    print(f"Starting cleanup of orphan deployments for {len(deployments)} items...")
+    try:
+        timeout_threshold = int(time.time()) - 1800  # 30분 전
+        in_progress_statuses = ['INSPECTING', 'BUILDING', 'DEPLOYING']
+        
+        for item in deployments:
+            current_status = item.get('status')
+            updated_at = item.get('updatedAt', 0)
+            
+            if current_status in in_progress_statuses and updated_at < timeout_threshold:
+                deployment_id = item['deploymentId']
+                new_status = f"{current_status}_TIMEOUT"
+                print(f"Found orphan deployment: {deployment_id}. Current status: {current_status}. Updating to {new_status}.")
+                
+                # DynamoDB의 상태를 업데이트.
+                update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, new_status)
+                # 메모리에 있는 목록의 상태도 즉시 업데이트합니다.
+                item['status'] = new_status
+        
+        return deployments
+
+    except Exception as e:
+        print(f"An error occurred during orphan deployment cleanup: {str(e)}")
+        return deployments # 오류가 발생하더라도 원본 목록을 반환합니다.

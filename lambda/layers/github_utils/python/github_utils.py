@@ -4,6 +4,7 @@ import boto3
 import requests
 
 secrets_manager = boto3.client('secretsmanager')
+dynamodb = boto3.resource('dynamodb')
 
 def get_secret(secret_id: str) -> str:
     """
@@ -48,3 +49,38 @@ def get_installation_access_token(installation_id: str, github_app_id: str, priv
     except Exception as e:
         print(f"Error generating installation access token for installation {installation_id}: {e}")
         raise
+
+
+def update_deployment_status(table_name: str, deployment_id: str, status: str, **kwargs):
+    """
+    DynamoDB의 배포 상태를 업데이트하는 공통 헬퍼 함수
+    """
+    print(f"Updating deployment {deployment_id} to status {status} with details: {kwargs}")
+    try:
+        deployments_table = dynamodb.Table(table_name)
+        
+        update_expression = 'SET #status = :status, updatedAt = :updatedAt'
+        expression_attribute_names = {'#status': 'status'}
+        expression_attribute_values = {
+            ':status': status,
+            ':updatedAt': int(time.time())
+        }
+
+        # 추가적인 속성들을 동적으로 처리
+        for key, value in kwargs.items():
+            if value is not None:
+                attr_name_key = f'#{key}'
+                attr_value_key = f':{key}'
+                update_expression += f', {attr_name_key} = {attr_value_key}'
+                expression_attribute_names[attr_name_key] = key
+                expression_attribute_values[attr_value_key] = value
+
+        deployments_table.update_item(
+            Key={'deploymentId': deployment_id},
+            UpdateExpression=update_expression,
+            ExpressionAttributeNames=expression_attribute_names,
+            ExpressionAttributeValues=expression_attribute_values
+        )
+        print(f"Successfully updated deployment {deployment_id} status to {status}.")
+    except Exception as e:
+        print(f"CRITICAL: Failed to update deployment {deployment_id} status to {status}. Error: {str(e)}")
