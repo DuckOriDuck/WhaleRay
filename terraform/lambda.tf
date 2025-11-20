@@ -141,7 +141,7 @@ resource "null_resource" "common_layer_dependencies" {
   }
 
   provisioner "local-exec" {
-    command = <<-EOT
+    command     = <<-EOT
       set -euo pipefail
       DEST="${path.module}/../build/layers/common/python"
       rm -rf "$DEST"
