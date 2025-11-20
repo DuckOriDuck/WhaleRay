@@ -59,6 +59,27 @@ jobs:
         with:
           terraform_version: 1.9.8
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies for Lambda Layers
+        run: |
+          set -euo pipefail
+          DEST="./build/layers/common/python"
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+          python3 -m pip install \
+            --platform manylinux2014_x86_64 \
+            --implementation cp \
+            --python-version 3.11 \
+            --abi cp311 \
+            --only-binary=:all: \
+            -r "lambda/layers/common_requirements.txt" \
+            -t "$DEST" \
+            --no-cache-dir
+
       - name: Terraform fmt
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform fmt -check

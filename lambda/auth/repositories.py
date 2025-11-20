@@ -9,11 +9,8 @@ from datetime import datetime, timedelta
 import boto3
 import requests
 
-try:
-    import jwt
-except ImportError:
-    print("WARNING: PyJWT not found")
-    jwt = None
+# Lambda Layer에서 공통 유틸리티 함수 가져오기
+from github_utils import get_installation_access_token
 
 dynamodb = boto3.resource('dynamodb')
 secrets_manager = boto3.client('secretsmanager')
@@ -77,34 +74,12 @@ def handler(event, context):
         try:
             print(f"Fetching repositories for installation {installation_id} ({account_login})")
 
-            # GitHub App JWT 생성
-            app_jwt = _generate_github_app_jwt()
-
-            # Installation Access Token 발급
-            token_response = requests.post(
-                f'https://api.github.com/app/installations/{installation_id}/access_tokens',
-                headers={
-                    'Authorization': f'Bearer {app_jwt}',
-                    'Accept': 'application/vnd.github+json'
-                },
-                timeout=10
+            # 레이어 함수를 사용하여 Installation Access Token 발급
+            access_token = get_installation_access_token(
+                installation_id=installation_id,
+                github_app_id=os.environ['GITHUB_APP_ID'],
+                private_key_secret_arn=os.environ['GITHUB_APP_PRIVATE_KEY_ARN']
             )
-
-            if token_response.status_code == 404:
-                print(f"Installation {installation_id} not found (404) - marking for deletion")
-                installations_to_delete.append(installation_id)
-                continue
-            elif token_response.status_code == 401:
-                print(f"Installation {installation_id} unauthorized (401) - marking for deletion")
-                installations_to_delete.append(installation_id)
-                continue
-            elif token_response.status_code >= 400:
-                print(f"Failed to get access token for installation {installation_id}: {token_response.status_code} {token_response.text}")
-                installations_to_delete.append(installation_id)
-                continue
-
-            token_data = token_response.json()
-            access_token = token_data.get('token')
 
             if not access_token:
                 print(f"No access token in response for installation {installation_id}")
@@ -152,6 +127,12 @@ def handler(event, context):
         except requests.exceptions.Timeout:
             print(f"Timeout fetching repositories for installation {installation_id}")
             continue
+        except ValueError as e: # get_installation_access_token에서 발생 가능
+            # 토큰 발급 실패 시 (e.g., 401, 404), 해당 installation을 삭제 목록에 추가
+            print(f"Failed to get access token for installation {installation_id}: {str(e)}")
+            if '401' in str(e) or '404' in str(e):
+                installations_to_delete.append(installation_id)
+            continue
         except Exception as e:
             print(f"Error fetching repositories for installation {installation_id}: {str(e)}")
             continue
@@ -168,79 +149,6 @@ def handler(event, context):
     print(f"Returning {len(all_repositories)} total repositories from {len(installations) - len(installations_to_delete)} valid installations")
 
     return _response(200, {'repositories': all_repositories})
-
-
-def _generate_github_app_jwt():
-    """
-    GitHub App private key로 JWT 생성
-    """
-    if not jwt:
-        raise ImportError("PyJWT library not available")
-
-    # Secrets Manager에서 GitHub App private key 가져오기
-    secret_response = secrets_manager.get_secret_value(
-        SecretId=os.environ['GITHUB_APP_PRIVATE_KEY_ARN']
-    )
-    private_key = secret_response['SecretString']
-
-    github_app_id = os.environ['GITHUB_APP_ID']
-
-    # GitHub App JWT 생성
-    now = int(time.time())
-    payload = {
-        'iat': now - 60,  # 1분 전으로 설정 (clock skew 대응)
-        'exp': now + 600,  # 10분 후 만료
-        'iss': github_app_id
-    }
-
-    return jwt.encode(payload, private_key, algorithm='RS256')
-
-
-def get_installation_access_token(installation_id):
-    """
-    GitHub App installation access token 생성
-
-    1. GitHub App private key로 JWT 생성
-    2. JWT를 사용하여 installation access token 요청
-    """
-    if not jwt:
-        raise ImportError("PyJWT library not available")
-
-    # Secrets Manager에서 GitHub App private key 가져오기
-    secret_response = secrets_manager.get_secret_value(
-        SecretId=os.environ['GITHUB_APP_PRIVATE_KEY_ARN']
-    )
-    private_key = secret_response['SecretString']
-
-    github_app_id = os.environ['GITHUB_APP_ID']
-
-    # GitHub App JWT 생성
-    now = int(time.time())
-    payload = {
-        'iat': now - 60,  # 1분 전으로 설정 (clock skew 대응)
-        'exp': now + 600,  # 10분 후 만료
-        'iss': github_app_id
-    }
-
-    app_jwt = jwt.encode(payload, private_key, algorithm='RS256')
-
-    # Installation access token 요청
-    token_response = requests.post(
-        f'https://api.github.com/app/installations/{installation_id}/access_tokens',
-        headers={
-            'Authorization': f'Bearer {app_jwt}',
-            'Accept': 'application/vnd.github+json'
-        },
-        timeout=10
-    )
-
-    if token_response.status_code != 201:
-        raise Exception(
-            f"Failed to create installation token: {token_response.status_code} {token_response.text}"
-        )
-
-    token_data = token_response.json()
-    return token_data['token']
 
 
 def _response(status_code, body):

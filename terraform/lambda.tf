@@ -44,7 +44,10 @@ resource "aws_iam_role_policy" "lambda" {
           aws_dynamodb_table.deployments.arn,
           "${aws_dynamodb_table.deployments.arn}/index/*",
           aws_dynamodb_table.services.arn,
-          "${aws_dynamodb_table.services.arn}/index/*"
+          "${aws_dynamodb_table.services.arn}/index/*",
+          # [ADDED] installations 테이블 접근 권한 추가
+          aws_dynamodb_table.installations.arn,
+          "${aws_dynamodb_table.installations.arn}/index/*"
         ]
       },
       {
@@ -118,9 +121,73 @@ resource "aws_iam_role_policy" "lambda" {
           "codebuild:BatchGetBuilds"
         ]
         Resource = "arn:aws:codebuild:*:*:project/${var.project_name}-*"
+      },
+      # [ADDED] repo_inspector 람다를 호출할 수 있는 권한 추가
+      {
+        Effect   = "Allow"
+        Action   = "lambda:InvokeFunction"
+        Resource = aws_lambda_function.repo_inspector.arn
       }
     ]
   })
+}
+
+# --- Lambda Layers ---
+
+# PyJWT, cryptography, requests 등 외부 라이브러리를 포함하는 공통 레이어
+resource "null_resource" "common_layer_dependencies" {
+  triggers = {
+    requirements_sha = filesha256("${path.module}/../lambda/layers/common_requirements.txt")
+  }
+
+  provisioner "local-exec" {
+    command     = <<-EOT
+      set -euo pipefail
+      DEST="${path.module}/../build/layers/common/python"
+      rm -rf "$DEST"
+      mkdir -p "$DEST"
+      python3 -m pip install \
+        --platform manylinux2014_x86_64 \
+        --implementation cp \
+        --python-version 3.11 \
+        --abi cp311 \
+        --only-binary=:all: \
+        -r "${path.module}/../lambda/layers/common_requirements.txt" \
+        -t "$DEST" \
+        --no-cache-dir
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+  }
+}
+
+data "archive_file" "common_layer_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../build/layers/common"
+  output_path = "${path.module}/../build/common_layer.zip"
+  depends_on  = [null_resource.common_layer_dependencies]
+}
+
+resource "aws_lambda_layer_version" "common_libs_layer" {
+  layer_name          = "${var.project_name}-common-libs"
+  description         = "Common Python libraries like PyJWT, requests, cryptography"
+  filename            = data.archive_file.common_layer_zip.output_path
+  source_code_hash    = data.archive_file.common_layer_zip.output_base64sha256
+  compatible_runtimes = ["python3.11"]
+}
+
+# github_utils.py와 같은 공유 코드를 포함하는 레이어
+data "archive_file" "github_utils_layer_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../lambda/layers/github_utils"
+  output_path = "${path.module}/../build/github_utils_layer.zip"
+}
+
+resource "aws_lambda_layer_version" "github_utils_layer" {
+  layer_name          = "${var.project_name}-github-utils"
+  description         = "Shared utility functions for GitHub interaction"
+  filename            = data.archive_file.github_utils_layer_zip.output_path
+  source_code_hash    = data.archive_file.github_utils_layer_zip.output_base64sha256
+  compatible_runtimes = ["python3.11"]
 }
 
 data "archive_file" "deploy_lambda" {
@@ -143,14 +210,17 @@ resource "aws_lambda_function" "deploy" {
 
   environment {
     variables = {
-      CLUSTER_NAME        = aws_ecs_cluster.main.name
-      DEPLOYMENTS_TABLE   = aws_dynamodb_table.deployments.name
-      SERVICES_TABLE      = aws_dynamodb_table.services.name
-      TASK_EXECUTION_ROLE = aws_iam_role.ecs_task_execution.arn
-      TASK_ROLE           = aws_iam_role.ecs_task.arn
-      SUBNETS             = join(",", aws_subnet.private[*].id)
-      SECURITY_GROUPS     = aws_security_group.ecs_tasks.id
-      TARGET_GROUP_ARN    = aws_lb_target_group.default.arn
+      FRONTEND_URL                 = "https://${var.domain_name}"
+      REPO_INSPECTOR_FUNCTION_NAME = aws_lambda_function.repo_inspector.function_name
+      INSTALLATIONS_TABLE          = aws_dynamodb_table.installations.name
+      CLUSTER_NAME                 = aws_ecs_cluster.main.name
+      DEPLOYMENTS_TABLE            = aws_dynamodb_table.deployments.name
+      SERVICES_TABLE               = aws_dynamodb_table.services.name
+      TASK_EXECUTION_ROLE          = aws_iam_role.ecs_task_execution.arn
+      TASK_ROLE                    = aws_iam_role.ecs_task.arn
+      SUBNETS                      = join(",", aws_subnet.private[*].id)
+      SECURITY_GROUPS              = aws_security_group.ecs_tasks.id
+      TARGET_GROUP_ARN             = aws_lb_target_group.default.arn
     }
   }
 }
@@ -183,6 +253,7 @@ resource "aws_lambda_function" "manage" {
 
   environment {
     variables = {
+      FRONTEND_URL      = "https://${var.domain_name}"
       DEPLOYMENTS_TABLE = aws_dynamodb_table.deployments.name
       SERVICES_TABLE    = aws_dynamodb_table.services.name
       USERS_TABLE       = aws_dynamodb_table.users.name
@@ -266,7 +337,8 @@ resource "aws_lambda_function" "logs_api" {
   }
 }
 
-# Repo Inspector Lambda (선택사항 - GitHub 연동 시 사용)
+# --- Repo Inspector Lambda ---
+
 data "archive_file" "repo_inspector_lambda" {
   depends_on  = [null_resource.clean_lambda_pycache]
   type        = "zip"
@@ -283,14 +355,21 @@ resource "aws_lambda_function" "repo_inspector" {
   runtime       = "python3.11"
   timeout       = 300
 
+  layers = [
+    aws_lambda_layer_version.common_libs_layer.arn,
+    aws_lambda_layer_version.github_utils_layer.arn
+  ]
+
   source_code_hash = data.archive_file.repo_inspector_lambda.output_base64sha256
 
   environment {
     variables = {
-      DEPLOYMENTS_TABLE  = aws_dynamodb_table.deployments.name
-      USERS_TABLE        = aws_dynamodb_table.users.name
-      ECR_REPOSITORY_URL = aws_ecr_repository.app_repo.repository_url
-      PROJECT_NAME       = var.project_name
+      DEPLOYMENTS_TABLE          = aws_dynamodb_table.deployments.name
+      USERS_TABLE                = aws_dynamodb_table.users.name
+      ECR_REPOSITORY_URL         = aws_ecr_repository.app_repo.repository_url
+      PROJECT_NAME               = var.project_name
+      GITHUB_APP_PRIVATE_KEY_ARN = aws_secretsmanager_secret.github_app_private_key.arn
+      GITHUB_APP_ID              = var.github_app_id
     }
   }
 }

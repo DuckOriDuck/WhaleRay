@@ -3,7 +3,7 @@ resource "aws_apigatewayv2_api" "main" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_origins = ["*"]
+    allow_origins = ["https://${var.domain_name}", "http://localhost:3000"]
     allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     allow_headers = ["*"]
     max_age       = 300
@@ -142,15 +142,17 @@ resource "aws_lambda_permission" "service_api" {
 }
 
 resource "aws_apigatewayv2_integration" "deploy" {
-  api_id           = aws_apigatewayv2_api.main.id
-  integration_type = "AWS_PROXY"
-  integration_uri  = aws_lambda_function.deploy.invoke_arn
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.deploy.invoke_arn
+  payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "manage" {
-  api_id           = aws_apigatewayv2_api.main.id
-  integration_type = "AWS_PROXY"
-  integration_uri  = aws_lambda_function.manage.invoke_arn
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.manage.invoke_arn
+  payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "service" {
@@ -192,6 +194,14 @@ resource "aws_apigatewayv2_route" "deployments_list" {
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
 }
 
+resource "aws_apigatewayv2_route" "deployments_create" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "POST /deployments"
+  target             = "integrations/${aws_apigatewayv2_integration.deploy.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+}
+
 # Logs API Integration
 resource "aws_lambda_permission" "logs_api" {
   statement_id  = "AllowAPIGatewayInvoke"
@@ -202,9 +212,10 @@ resource "aws_lambda_permission" "logs_api" {
 }
 
 resource "aws_apigatewayv2_integration" "logs_api" {
-  api_id           = aws_apigatewayv2_api.main.id
-  integration_type = "AWS_PROXY"
-  integration_uri  = aws_lambda_function.logs_api.invoke_arn
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.logs_api.invoke_arn
+  payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_route" "deployment_logs" {
