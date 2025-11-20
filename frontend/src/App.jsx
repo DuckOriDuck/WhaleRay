@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { isAuthenticated, getUser, loginWithGitHub, logout, handleAuthCallback } from './lib/auth'
 import { getMe, getGitHubRepositories } from './lib/api'
 import ServiceList from './components/ServiceList'
@@ -14,6 +14,13 @@ function App() {
   const [repositories, setRepositories] = useState([])
   const [reposLoading, setReposLoading] = useState(false)
   const [reposError, setReposError] = useState(null)
+
+  // Refresh state
+  const [refreshing, setRefreshing] = useState(false)
+
+  // Refs for child components refresh functions
+  const serviceListRefreshRef = useRef(null)
+  const deploymentHistoryRefreshRef = useRef(null)
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
@@ -80,6 +87,36 @@ function App() {
     } finally {
       setReposLoading(false)
     }
+  }
+
+  async function handleRefresh() {
+    if (refreshing) return
+
+    setRefreshing(true)
+    try {
+      if (activeTab === 'services' && serviceListRefreshRef.current) {
+        await serviceListRefreshRef.current()
+      } else if (activeTab === 'deploy') {
+        await loadRepositories()
+      } else if (activeTab === 'history' && deploymentHistoryRefreshRef.current) {
+        await deploymentHistoryRefreshRef.current()
+      }
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  function handleGitHubAppSettings() {
+    const userId = user ? user.username : 'unknown'
+    const width = 900
+    const height = 700
+    const left = (window.screen.width - width) / 2
+    const top = (window.screen.height - height) / 2
+    window.open(
+      `https://github.com/apps/whaleray/installations/new?state=${userId}`,
+      'github_app_install',
+      `width=${width},height=${height},left=${left},top=${top},scrollbars=yes`
+    )
   }
 
   const handleSignIn = () => {
@@ -250,55 +287,126 @@ function App() {
 
       <div className="container">
         <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e0e0e0' }}>
-            <button
-              onClick={() => setActiveTab('services')}
-              style={{
-                padding: '12px 24px',
-                background: 'none',
-                border: 'none',
-                borderBottom: activeTab === 'services' ? '2px solid #1a73e8' : '2px solid transparent',
-                color: activeTab === 'services' ? '#1a73e8' : '#666',
-                fontWeight: activeTab === 'services' ? '600' : '400',
-                cursor: 'pointer'
-              }}
-            >
-              서비스
-            </button>
-            <button
-              onClick={() => setActiveTab('deploy')}
-              style={{
-                padding: '12px 24px',
-                background: 'none',
-                border: 'none',
-                borderBottom: activeTab === 'deploy' ? '2px solid #1a73e8' : '2px solid transparent',
-                color: activeTab === 'deploy' ? '#1a73e8' : '#666',
-                fontWeight: activeTab === 'deploy' ? '600' : '400',
-                cursor: 'pointer'
-              }}
-            >
-              새 배포
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              style={{
-                padding: '12px 24px',
-                background: 'none',
-                border: 'none',
-                borderBottom: activeTab === 'history' ? '2px solid #1a73e8' : '2px solid transparent',
-                color: activeTab === 'history' ? '#1a73e8' : '#666',
-                fontWeight: activeTab === 'history' ? '600' : '400',
-                cursor: 'pointer'
-              }}
-            >
-              배포 히스토리
-            </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e0e0e0' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => setActiveTab('services')}
+                style={{
+                  padding: '12px 24px',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'services' ? '2px solid #1a73e8' : '2px solid transparent',
+                  color: activeTab === 'services' ? '#1a73e8' : '#666',
+                  fontWeight: activeTab === 'services' ? '600' : '400',
+                  cursor: 'pointer'
+                }}
+              >
+                서비스
+              </button>
+              <button
+                onClick={() => setActiveTab('deploy')}
+                style={{
+                  padding: '12px 24px',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'deploy' ? '2px solid #1a73e8' : '2px solid transparent',
+                  color: activeTab === 'deploy' ? '#1a73e8' : '#666',
+                  fontWeight: activeTab === 'deploy' ? '600' : '400',
+                  cursor: 'pointer'
+                }}
+              >
+                새 배포
+              </button>
+              <button
+                onClick={() => setActiveTab('history')}
+                style={{
+                  padding: '12px 24px',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'history' ? '2px solid #1a73e8' : '2px solid transparent',
+                  color: activeTab === 'history' ? '#1a73e8' : '#666',
+                  fontWeight: activeTab === 'history' ? '600' : '400',
+                  cursor: 'pointer'
+                }}
+              >
+                배포 히스토리
+              </button>
+            </div>
+
+            {/* 공통 액션 버튼들 */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', paddingBottom: '2px' }}>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                title="새로고침"
+                style={{
+                  background: 'none',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  cursor: refreshing ? 'not-allowed' : 'pointer',
+                  padding: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: refreshing ? '#999' : '#666',
+                  opacity: refreshing ? 0.6 : 1
+                }}
+                onMouseOver={(e) => !refreshing && (e.currentTarget.style.background = '#f5f5f5')}
+                onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ transform: refreshing ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }}
+                >
+                  <path d="M23 4v6h-6"></path>
+                  <path d="M1 20v-6h6"></path>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+              </button>
+              <button
+                onClick={handleGitHubAppSettings}
+                style={{
+                  background: 'none',
+                  cursor: 'pointer',
+                  textDecoration: 'none',
+                  padding: '6px 14px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: '#1a73e8',
+                  border: '1px solid #1a73e8',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = '#e8f0fe'
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'transparent'
+                }}
+              >
+                <svg height="14" width="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+                </svg>
+                GitHub App 설정
+              </button>
+            </div>
           </div>
         </div>
 
         {activeTab === 'services' && (
           <ServiceList
             onStartDeployment={() => setActiveTab('deploy')}
+            onRefreshReady={(refreshFn) => { serviceListRefreshRef.current = refreshFn }}
           />
         )}
         {activeTab === 'deploy' && (
@@ -309,7 +417,11 @@ function App() {
             onLoadRepositories={loadRepositories}
           />
         )}
-        {activeTab === 'history' && <DeploymentHistory />}
+        {activeTab === 'history' && (
+          <DeploymentHistory
+            onRefreshReady={(refreshFn) => { deploymentHistoryRefreshRef.current = refreshFn }}
+          />
+        )}
       </div>
     </div>
   )

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getServices, getGitHubInstallationStatus } from '../lib/api'
 import { config } from '../config'
 
-export default function ServiceList({ onStartDeployment }) {
+export default function ServiceList({ onStartDeployment, onRefreshReady }) {
   const [services, setServices] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -11,6 +11,10 @@ export default function ServiceList({ onStartDeployment }) {
 
   useEffect(() => {
     loadServices()
+    // Pass refresh function to parent
+    if (onRefreshReady) {
+      onRefreshReady(loadServices)
+    }
   }, [])
 
   async function loadServices() {
