@@ -48,12 +48,17 @@ def handler(event, context):
         if not repository_full_name:
             return _response(400, {'error': 'repositoryFullName is required'})
 
+        # repositoryFullName에서 accountLogin (소유자) 추출
+        try:
+            repo_owner = repository_full_name.split('/')[0]
+        except (IndexError, AttributeError):
+            return _response(400, {'error': 'Invalid repositoryFullName format. Expected "owner/repo".'})
+
         # userId로 installations 조회
         response = installations_table.query(
             IndexName='userId-index',
             KeyConditionExpression='userId = :userId',
             ExpressionAttributeValues={':userId': user_id},
-            Limit=1
         )
         installations = response.get('Items', [])
 
@@ -63,7 +68,17 @@ def handler(event, context):
                 'needInstallation': True
             })
 
-        installation_id = installations[0]['installationId']
+        # 올바른 installation 찾기
+        target_installation = None
+        for inst in installations:
+            if inst.get('accountLogin') == repo_owner:
+                target_installation = inst
+                break
+
+        if not target_installation:
+            return _response(404, {'error': f'No installation found for repository owner "{repo_owner}". Please install the GitHub App.'})
+
+        installation_id = target_installation['installationId']
 
         # 배포 정보 생성
         deployment_id = str(uuid4())
