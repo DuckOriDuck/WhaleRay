@@ -132,6 +132,64 @@ resource "aws_iam_role_policy" "lambda" {
   })
 }
 
+# --- Lambda Layers ---
+
+# PyJWT, cryptography, requests 등 외부 라이브러리를 포함하는 공통 레이어
+resource "null_resource" "common_layer_dependencies" {
+  triggers = {
+    requirements_sha = filesha256("${path.module}/../lambda/layers/common_requirements.txt")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -euo pipefail
+      DEST="${path.module}/../build/layers/common/python"
+      rm -rf "$DEST"
+      mkdir -p "$DEST"
+      python3 -m pip install \
+        --platform manylinux2014_x86_64 \
+        --implementation cp \
+        --python-version 3.11 \
+        --abi cp311 \
+        --only-binary=:all: \
+        -r "${path.module}/../lambda/layers/common_requirements.txt" \
+        -t "$DEST" \
+        --no-cache-dir
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+  }
+}
+
+data "archive_file" "common_layer_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../build/layers/common"
+  output_path = "${path.module}/../build/common_layer.zip"
+  depends_on  = [null_resource.common_layer_dependencies]
+}
+
+resource "aws_lambda_layer_version" "common_libs_layer" {
+  layer_name          = "${var.project_name}-common-libs"
+  description         = "Common Python libraries like PyJWT, requests, cryptography"
+  filename            = data.archive_file.common_layer_zip.output_path
+  source_code_hash    = data.archive_file.common_layer_zip.output_base64sha256
+  compatible_runtimes = ["python3.11"]
+}
+
+# github_utils.py와 같은 공유 코드를 포함하는 레이어
+data "archive_file" "github_utils_layer_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../lambda/layers/github_utils"
+  output_path = "${path.module}/../build/github_utils_layer.zip"
+}
+
+resource "aws_lambda_layer_version" "github_utils_layer" {
+  layer_name          = "${var.project_name}-github-utils"
+  description         = "Shared utility functions for GitHub interaction"
+  filename            = data.archive_file.github_utils_layer_zip.output_path
+  source_code_hash    = data.archive_file.github_utils_layer_zip.output_base64sha256
+  compatible_runtimes = ["python3.11"]
+}
+
 data "archive_file" "deploy_lambda" {
   depends_on  = [null_resource.clean_lambda_pycache]
   type        = "zip"
@@ -279,7 +337,8 @@ resource "aws_lambda_function" "logs_api" {
   }
 }
 
-# Repo Inspector Lambda (선택사항 - GitHub 연동 시 사용)
+# --- Repo Inspector Lambda ---
+
 data "archive_file" "repo_inspector_lambda" {
   depends_on  = [null_resource.clean_lambda_pycache]
   type        = "zip"
@@ -295,6 +354,11 @@ resource "aws_lambda_function" "repo_inspector" {
   handler       = "handler.handler"
   runtime       = "python3.11"
   timeout       = 300
+
+  layers = [
+    aws_lambda_layer_version.common_libs_layer.arn,
+    aws_lambda_layer_version.github_utils_layer.arn
+  ]
 
   source_code_hash = data.archive_file.repo_inspector_lambda.output_base64sha256
 

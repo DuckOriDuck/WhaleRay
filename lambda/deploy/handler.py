@@ -32,13 +32,16 @@ def handler(event, context):
     """
     try:
         # JWT authorizer에서 userId 추출
-        try:
-            user_id = event['requestContext']['authorizer']['lambda']['sub']
-        except (KeyError, TypeError):
-            try:
-                user_id = event['requestContext']['authorizer']['userId']
-            except (KeyError, TypeError):
-                return _response(401, {'error': 'Unauthorized'})
+        # API Gateway Payload v1.0 및 v2.0 호환
+        auth_ctx = event.get('requestContext', {}).get('authorizer', {}) or {}
+        lambda_ctx = auth_ctx.get('lambda', {}) or {}
+        
+        user_id = lambda_ctx.get('userId') or lambda_ctx.get('sub')
+
+        if not user_id:
+            print(f"Unauthorized: userId not found in authorizer context. Context: {json.dumps(auth_ctx)}")
+            return _response(401, {'error': 'Unauthorized'})
+        print(f"Authorized user: {user_id}")
 
         # 요청 본문 파싱
         body = json.loads(event['body'])

@@ -5,6 +5,9 @@ import time
 from typing import Dict, Optional
 import requests
 
+# Lambda Layer에서 공통 유틸리티 함수 가져오기
+from github_utils import get_installation_access_token
+
 # Boto3 클라이언트 초기화
 codebuild = boto3.client('codebuild')
 dynamodb = boto3.resource('dynamodb')
@@ -37,7 +40,11 @@ def handler(event, context):
     framework = None # 오류 로깅을 위해 프레임워크 변수 미리 선언
     try:
         # 1. GitHub App 설치 액세스 토큰 생성
-        installation_access_token = get_installation_access_token(installation_id)
+        installation_access_token = get_installation_access_token(
+            installation_id=installation_id,
+            github_app_id=GITHUB_APP_ID,
+            private_key_secret_arn=GITHUB_APP_PRIVATE_KEY_ARN
+        )
 
         # 2. 레포지토리 분석 (프레임워크 감지)
         framework = detect_framework(repository_full_name, branch, installation_access_token)
@@ -165,47 +172,3 @@ def _update_deployment_status(deployment_id: str, status: str, **kwargs):
         print(f"Successfully updated deployment {deployment_id} status to {status}.")
     except Exception as e:
         print(f"CRITICAL: Failed to update deployment {deployment_id} status to {status}. Error: {str(e)}")
-
-
-def get_secret(secret_id: str) -> str:
-    """
-    Secrets Manager에서 시크릿 가져오기
-    """
-    try:
-        response = secrets_manager.get_secret_value(SecretId=secret_id)
-        return response['SecretString']
-    except Exception as e:
-        print(f"Error retrieving secret {secret_id}: {e}")
-        raise
-
-
-def get_installation_access_token(installation_id: str) -> str:
-    """
-    GitHub App installation access token 생성
-    """
-    if not GITHUB_APP_PRIVATE_KEY_ARN or not GITHUB_APP_ID:
-        raise ValueError("GitHub App private key ARN or App ID not configured in environment variables.")
-    try:
-        private_key = get_secret(GITHUB_APP_PRIVATE_KEY_ARN)
-        import jwt
-        
-        now = int(time.time())
-        payload = {
-            'iat': now - 60,
-            'exp': now + 600,
-            'iss': GITHUB_APP_ID
-        }
-        app_jwt = jwt.encode(payload, private_key, algorithm='RS256')
-
-        token_response = requests.post(
-            f'https://api.github.com/app/installations/{installation_id}/access_tokens',
-            headers={'Authorization': f'Bearer {app_jwt}', 'Accept': 'application/vnd.github+json'},
-            timeout=10
-        )
-        token_response.raise_for_status()
-        return token_response.json()['token']
-    except ImportError:
-        raise ImportError("PyJWT library not found. Ensure it's available in the Lambda environment.")
-    except Exception as e:
-        print(f"Error generating installation access token for installation {installation_id}: {e}")
-        raise

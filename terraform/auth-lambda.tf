@@ -354,6 +354,11 @@ resource "aws_lambda_function" "github_repositories" {
   runtime       = "python3.11"
   timeout       = 30
 
+  layers = [
+    aws_lambda_layer_version.common_libs_layer.arn,
+    aws_lambda_layer_version.github_utils_layer.arn
+  ]
+
   environment {
     variables = {
       INSTALLATIONS_TABLE        = aws_dynamodb_table.installations.name
