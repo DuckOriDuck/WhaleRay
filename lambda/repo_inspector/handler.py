@@ -73,20 +73,30 @@ def handler(event, context):
             )
             return {'status': 'NOT_SUPPORTED'}
 
-        # 4. 배포 상태를 'BUILDING'으로 업데이트 (피드백 반영)
-        # 실제 CodeBuild 실행 로직은 생략하고 상태만 업데이트합니다.
-        # TODO 여기에 Codebuild 실행 로직 들어갈 예정
-        print(f"Framework '{framework}' detected. Updating status to BUILDING for deployment {deployment_id}.")
+        # 4. CodeBuild 프로젝트 실행
+        print(f"Starting CodeBuild project '{codebuild_project}' for deployment {deployment_id}")
+        codebuild.start_build(
+            projectName=codebuild_project,
+            sourceVersion=branch,  # 빌드할 브랜치 지정
+            sourceLocationOverride=f"https://github.com/{repository_full_name}.git", # 동적으로 소스 저장소 위치 지정
+            environmentVariablesOverride=[
+                {'name': 'DEPLOYMENT_ID', 'value': deployment_id, 'type': 'PLAINTEXT'},
+                {'name': 'REPOSITORY_FULL_NAME', 'value': repository_full_name, 'type': 'PLAINTEXT'},
+                {'name': 'INSTALLATION_ID', 'value': str(installation_id), 'type': 'PLAINTEXT'},
+                {'name': 'ECR_IMAGE_URI', 'value': f"{ECR_REPOSITORY_URL}:{deployment_id}", 'type': 'PLAINTEXT'}
+            ]
+        )
+        print(f"Successfully started CodeBuild for deployment {deployment_id}")
+
+        # 5. 배포 상태를 'BUILDING'으로 업데이트
+        print(f"Updating status to BUILDING for deployment {deployment_id}.")
         _update_deployment_status(
             deployment_id, 'BUILDING',
             framework=framework,
             codebuild_project=codebuild_project
         )
-        print(f"Successfully updated status to BUILDING for deployment {deployment_id}")
+        print(f"Successfully updated deployment status to BUILDING for deployment {deployment_id}")
         
-        # TODO: 이후 단계에서 CodeBuild 실행 로직 추가
-        # codebuild.start_build(...)
-
         return {'status': 'BUILDING'}
 
     except Exception as e:
@@ -122,8 +132,6 @@ def detect_framework(repository_full_name: str, branch: str, github_token: str) 
         return 'nextjs'
     if check_file_exists('package.json'):
         return 'nodejs'
-    if check_file_exists('requirements.txt'):
-        return 'python'
     
     return None
 
@@ -135,8 +143,7 @@ def select_codebuild_project(framework: str) -> Optional[str]:
     mapping = {
         'spring-boot': f'{PROJECT_NAME}-spring-boot',
         'nodejs': f'{PROJECT_NAME}-nodejs',
-        'nextjs': f'{PROJECT_NAME}-nextjs',
-        'python': f'{PROJECT_NAME}-python'
+        'nextjs': f'{PROJECT_NAME}-nextjs'
     }
     return mapping.get(framework)
 

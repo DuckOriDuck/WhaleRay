@@ -19,6 +19,7 @@ def handler(event, context):
     """
     CodeBuild 빌드 완료 이벤트를 받아서 ECS로 배포하는 Lambda 함수
     """
+    print("invoked!")
     print(f"Received event: {json.dumps(event)}")
 
     try:
@@ -56,13 +57,15 @@ def handler(event, context):
         if build_status == 'FAILED':
             deployments_table.update_item(
                 Key={'deploymentId': deployment_id},
-                UpdateExpression='SET #status = :status, updatedAt = :updatedAt',
+                UpdateExpression='SET #status = :status, updatedAt = :updatedAt, errorMessage = :errorMessage',
                 ExpressionAttributeNames={'#status': 'status'},
                 ExpressionAttributeValues={
                     ':status': 'BUILD_FAILED',
-                    ':updatedAt': int(time.time())
+                    ':updatedAt': int(time.time()),
+                    ':errorMessage': f"CodeBuild build failed. See build logs for details (Build ID: {build_id})."
                 }
             )
+            print(f"Deployment {deployment_id} status updated to BUILD_FAILED.")
             return {'statusCode': 200, 'body': 'Build failed, deployment aborted'}
 
         # 빌드 성공 - ECS 배포 시작
@@ -70,109 +73,17 @@ def handler(event, context):
         user_id = deployment.get('userId')
         port = deployment.get('port', 3000)
 
-        if not ecr_image_uri:
-            # ECR 이미지 URI 구성
-            ecr_repo_url = os.environ['ECR_REPOSITORY_URL']
-            ecr_image_uri = f"{ecr_repo_url}:{deployment_id}"
+        print("Build Succeeded! Starting deployment process...")
+        print(f"Deployment ID: {deployment_id}")
+        print(f"Image to deploy: {ecr_image_uri}")
 
-        # ECS Task Definition 생성
-        task_def_name = f"whaleray-{service_name}-{deployment_id[:8]}"
-
-        task_definition = ecs.register_task_definition(
-            family=task_def_name,
-            networkMode='bridge',
-            requiresCompatibilities=['EC2'],
-            executionRoleArn=TASK_EXECUTION_ROLE,
-            taskRoleArn=TASK_ROLE,
-            containerDefinitions=[
-                {
-                    'name': service_name,
-                    'image': ecr_image_uri,
-                    'essential': True,
-                    'memory': 512,
-                    'portMappings': [{
-                        'containerPort': port,
-                        'hostPort': 0,  # 동적 포트 매핑
-                        'protocol': 'tcp'
-                    }],
-                    'environment': deployment.get('envVars', []),
-                    'logConfiguration': {
-                        'logDriver': 'awslogs',
-                        'options': {
-                            'awslogs-group': f'/ecs/{task_def_name}',
-                            'awslogs-region': os.environ['AWS_REGION'],
-                            'awslogs-stream-prefix': 'ecs',
-                            'awslogs-create-group': 'true'
-                        }
-                    }
-                }
-            ]
-        )
-
-        task_def_arn = task_definition['taskDefinition']['taskDefinitionArn']
-
-        # 서비스 ID 구성
-        service_id = f"{user_id}-{service_name}"
-
-        # ECS Service 생성 또는 업데이트
-        try:
-            # 기존 서비스 조회
-            existing_services = ecs.describe_services(
-                cluster=CLUSTER_NAME,
-                services=[service_id]
-            )
-
-            if existing_services['services'] and existing_services['services'][0]['status'] == 'ACTIVE':
-                # 서비스 업데이트
-                ecs.update_service(
-                    cluster=CLUSTER_NAME,
-                    service=service_id,
-                    taskDefinition=task_def_arn,
-                    forceNewDeployment=True
-                )
-                action = 'updated'
-            else:
-                raise Exception('Service not found or inactive')
-
-        except Exception:
-            # 새 서비스 생성
-            ecs.create_service(
-                cluster=CLUSTER_NAME,
-                serviceName=service_id,
-                taskDefinition=task_def_arn,
-                desiredCount=1,
-                launchType='EC2',
-                loadBalancers=[{
-                    'targetGroupArn': TARGET_GROUP_ARN,
-                    'containerName': service_name,
-                    'containerPort': port
-                }]
-            )
-            action = 'created'
-
-        # Deployments 테이블 업데이트
-        deployments_table.update_item(
-            Key={'deploymentId': deployment_id},
-            UpdateExpression='SET #status = :status, ecsService = :ecsService, ecsLogGroup = :ecsLogGroup, taskDefinitionArn = :taskDefArn, updatedAt = :updatedAt',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={
-                ':status': 'RUNNING',
-                ':ecsService': service_id,
-                ':ecsLogGroup': f'/ecs/{task_def_name}',
-                ':taskDefArn': task_def_arn,
-                ':updatedAt': int(time.time())
-            }
-        )
-
-        print(f"Service {action}: {service_id}")
+        # TODO: 여기에 실제 ECS 배포 로직이 들어갑니다.
 
         return {
             'statusCode': 200,
-            'body': json.dumps({
-                'message': f'Service {action} successfully',
-                'deploymentId': deployment_id,
-                'serviceId': service_id
-            })
+            'body': json.dumps(
+                {'message': 'Deployment process triggered successfully', 'deploymentId': deployment_id}
+            )
         }
 
     except Exception as e:
