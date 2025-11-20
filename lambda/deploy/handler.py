@@ -87,6 +87,10 @@ def handler(event, context):
         deployment_id = str(uuid4())
         timestamp = int(time.time())
         
+        # "owner/repo" 형식을 "owner-repo"로 변환하여 서비스 이름으로 사용
+        service_name = repository_full_name.replace('/', '-')
+        service_id = f"{user_id}-{service_name}"
+
         # repo_inspector에 전달할 페이로드
         invoke_payload = {
             'deploymentId': deployment_id,
@@ -95,7 +99,9 @@ def handler(event, context):
             'repositoryFullName': repository_full_name,
             'branch': branch,
             'createdAt': timestamp,
-            'updatedAt': timestamp
+            'updatedAt': timestamp,
+            'serviceName': service_name, # 생성된 서비스 이름을 페이로드에 추가
+            'serviceId': service_id      # GSI 및 서비스 식별을 위해 serviceId 추가
         }
 
         # repo_inspector 람다 비동기 호출

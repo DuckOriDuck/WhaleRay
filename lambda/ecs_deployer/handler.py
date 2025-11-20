@@ -11,11 +11,13 @@ dynamodb = boto3.resource('dynamodb')
 
 CLUSTER_NAME = os.environ['CLUSTER_NAME']
 DEPLOYMENTS_TABLE = os.environ['DEPLOYMENTS_TABLE']
+SERVICES_TABLE = os.environ['SERVICES_TABLE']
 TASK_EXECUTION_ROLE = os.environ['TASK_EXECUTION_ROLE']
 TASK_ROLE = os.environ['TASK_ROLE']
 TARGET_GROUP_ARN = os.environ['TARGET_GROUP_ARN']
 
 deployments_table = dynamodb.Table(DEPLOYMENTS_TABLE)
+services_table = dynamodb.Table(SERVICES_TABLE)
 
 
 def handler(event, context):
@@ -67,8 +69,8 @@ def handler(event, context):
             return {'statusCode': 200, 'body': 'Build failed, deployment aborted'}
 
         # 빌드 성공 - ECS 배포 시작
-        service_name = deployment.get('serviceName')
-        user_id = deployment.get('userId')
+        service_name = deployment['serviceName'] # 이제 deployments 테이블에 serviceName이 항상 존재합니다.
+        service_id = deployment['serviceId'] # 배포 정보에서 serviceId를 직접 가져옵니다.
         port = deployment.get('port', 3000)
 
         # 실제 배포 시작 전 상태를 DEPLOYING으로 변경
@@ -78,13 +80,101 @@ def handler(event, context):
         print(f"Deployment ID: {deployment_id}")
         print(f"Image to deploy: {ecr_image_uri}")
 
-        # TODO: 여기에 실제 ECS 배포 로직이 들어갑니다.
+        # ECS Task Definition 생성 : 쉬운 로그 풀링을 위해
+        task_def_name = f"whaleray-{service_name}-{deployment_id[:8]}"
+
+        task_definition = ecs.register_task_definition(
+            family=task_def_name,
+            networkMode='bridge',
+            requiresCompatibilities=['EC2'],
+            executionRoleArn=TASK_EXECUTION_ROLE,
+            taskRoleArn=TASK_ROLE,
+            containerDefinitions=[
+                {
+                    'name': service_name,
+                    'image': ecr_image_uri,
+                    'essential': True,
+                    'memory': 512,
+                    'portMappings': [{
+                        'containerPort': port,
+                        'hostPort': 0,  # 동적 포트 매핑
+                        'protocol': 'tcp'
+                    }],
+                    'environment': deployment.get('envVars', []),
+                    'logConfiguration': {
+                        'logDriver': 'awslogs',
+                        'options': {
+                            # 로그 그룹을 중앙화하고, 스트림 접두사로 로그를 격리합니다.
+                            'awslogs-group': f'/ecs/{CLUSTER_NAME}',
+                            'awslogs-region': os.environ['AWS_REGION'],
+                            'awslogs-stream-prefix': deployment_id,
+                            'awslogs-create-group': 'true'
+                        }
+                    }
+                }
+            ]
+        )
+
+        task_def_arn = task_definition['taskDefinition']['taskDefinitionArn']
+
+        # ECS Service 생성 또는 업데이트
+        try:
+            # 기존 서비스 조회
+            existing_services = ecs.describe_services(
+                cluster=CLUSTER_NAME,
+                services=[service_id]
+            )
+
+            if existing_services['services'] and existing_services['services'][0]['status'] == 'ACTIVE':
+                # 서비스 업데이트
+                ecs.update_service(
+                    cluster=CLUSTER_NAME,
+                    service=service_id,
+                    taskDefinition=task_def_arn,
+                    forceNewDeployment=True
+                )
+                action = 'updated'
+            else:
+                raise Exception('Service not found or inactive')
+
+        except Exception:
+            # 새 서비스 생성
+            ecs.create_service(
+                cluster=CLUSTER_NAME,
+                serviceName=service_id,
+                taskDefinition=task_def_arn,
+                desiredCount=1,
+                launchType='EC2',
+                loadBalancers=[{
+                    'targetGroupArn': TARGET_GROUP_ARN,
+                    'containerName': service_name,
+                    'containerPort': port
+                }]
+            )
+            action = 'created'
+
+        # Deployments 테이블 업데이트
+        update_deployment_status(
+            DEPLOYMENTS_TABLE,
+            deployment_id,
+            'RUNNING',
+            ecsService=service_id,
+            ecsLogGroup=f'/ecs/{CLUSTER_NAME}',
+            taskDefinitionArn=task_def_arn
+        )
+
+        # 이전 RUNNING 상태의 배포를 SUPERSEDED로 변경
+        supersede_previous_deployment(deployment_id, service_id)
+
+        print(f"Service {action}: {service_id}")
 
         return {
             'statusCode': 200,
-            'body': json.dumps(
-                {'message': 'Deployment process triggered successfully', 'deploymentId': deployment_id}
-            )
+            'body': json.dumps({
+                'message': f'Service {action} successfully',
+                'deploymentId': deployment_id,
+                'serviceId': service_id
+            })
         }
 
     except Exception as e:
@@ -104,3 +194,36 @@ def handler(event, context):
             'statusCode': 500,
             'body': json.dumps({'error': str(e)})
         }
+
+
+def supersede_previous_deployment(current_deployment_id: str, service_id: str):
+    """
+    services 테이블을 사용하여 이전 활성 배포를 SUPERSEDED로 만들고,
+    새로운 배포 ID로 activeDeploymentId를 업데이트
+    """
+    print(f"Superseding previous deployment for service '{service_id}'...")
+    try:
+        # 1. services 테이블에서 이전 activeDeploymentId를 가져옵니다.
+        service_response = services_table.get_item(Key={'serviceId': service_id})
+        old_active_deployment_id = service_response.get('Item', {}).get('activeDeploymentId')
+
+        # 2. 이전 배포가 존재하면 SUPERSEDED로 상태를 변경합니다.
+        if old_active_deployment_id and old_active_deployment_id != current_deployment_id:
+            print(f"Found previous active deployment {old_active_deployment_id}, updating to SUPERSEDED.")
+            update_deployment_status(
+                DEPLOYMENTS_TABLE,
+                old_active_deployment_id,
+                'SUPERSEDED'
+            )
+
+        # 3. services 테이블의 activeDeploymentId를 현재 배포 ID로 업데이트합니다.
+        services_table.update_item(
+            Key={'serviceId': service_id},
+            UpdateExpression='SET activeDeploymentId = :did',
+            ExpressionAttributeValues={':did': current_deployment_id}
+        )
+        print(f"Service {service_id} active deployment updated to {current_deployment_id}.")
+
+    except Exception as e:
+        # 이 로직은 메인 배포 흐름에 영향을 주지 않도록 오류를 로깅만 합니다.
+        print(f"Warning: Failed to supersede previous deployments. Error: {str(e)}")

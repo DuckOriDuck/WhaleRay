@@ -313,6 +313,7 @@ resource "aws_lambda_function" "ecs_deployer" {
     variables = {
       CLUSTER_NAME        = aws_ecs_cluster.main.name
       DEPLOYMENTS_TABLE   = aws_dynamodb_table.deployments.name
+      SERVICES_TABLE      = aws_dynamodb_table.services.name
       USERS_TABLE         = aws_dynamodb_table.users.name
       TASK_EXECUTION_ROLE = aws_iam_role.ecs_task_execution.arn
       TASK_ROLE           = aws_iam_role.ecs_task.arn

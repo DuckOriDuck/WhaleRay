@@ -74,6 +74,13 @@ def handler(event, context):
             projectName=codebuild_project,
             sourceVersion=branch,  # 빌드할 브랜치 지정
             sourceLocationOverride=f"https://github.com/{repository_full_name}.git", # 동적으로 소스 저장소 위치 지정
+            logsConfigOverride={
+                'cloudWatchLogs': {
+                    'status': 'ENABLED',
+                    # 로그 스트림 이름을 deploymentId로 고정하여 빌드 로그를 격리합니다.
+                    'streamName': deployment_id
+                }
+            },
             environmentVariablesOverride=[
                 {'name': 'DEPLOYMENT_ID', 'value': deployment_id, 'type': 'PLAINTEXT'},
                 {'name': 'REPOSITORY_FULL_NAME', 'value': repository_full_name, 'type': 'PLAINTEXT'},
