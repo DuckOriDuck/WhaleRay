@@ -37,3 +37,8 @@ output "api_domain_url" {
   description = "API Custom Domain URL"
   value       = "https://api.${var.domain_name}"
 }
+
+output "cloudwatch_dashboard_url" {
+  description = "CloudWatch Dashboard URL"
+  value       = "https://console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.main.dashboard_name}"
+}
