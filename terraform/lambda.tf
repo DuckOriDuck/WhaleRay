@@ -250,7 +250,8 @@ resource "aws_lambda_function" "manage" {
   timeout       = 30
 
   layers = [
-    # update_deployment_status 함수를 사용하기 위해 레이어 추가
+    # 외부 라이브러리 (requests 등)
+    aws_lambda_layer_version.common_libs_layer.arn,
     aws_lambda_layer_version.github_utils_layer.arn
   ]
 
@@ -299,6 +300,12 @@ resource "aws_lambda_function" "ecs_deployer" {
   handler       = "handler.handler"
   runtime       = "python3.11"
   timeout       = 300
+
+  layers = [
+    # 외부 라이브러리 (requests 등)
+    aws_lambda_layer_version.common_libs_layer.arn,
+    aws_lambda_layer_version.github_utils_layer.arn
+  ]
 
   source_code_hash = data.archive_file.ecs_deployer_lambda.output_base64sha256
 
