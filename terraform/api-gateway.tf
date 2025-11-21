@@ -59,6 +59,10 @@ resource "aws_apigatewayv2_integration" "auth_github_authorize" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.auth_github_authorize.invoke_arn
   payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_route" "auth_github_start" {
@@ -66,6 +70,11 @@ resource "aws_apigatewayv2_route" "auth_github_start" {
   route_key = "GET /auth/github/start"
   target    = "integrations/${aws_apigatewayv2_integration.auth_github_authorize.id}"
   # No authorization - public endpoint
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.auth_github_authorize.id]
+  }
 }
 
 # GitHub OAuth Callback Integration
@@ -74,6 +83,10 @@ resource "aws_apigatewayv2_integration" "auth_github_callback" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.auth_github_callback.invoke_arn
   payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_route" "auth_github_callback" {
@@ -81,6 +94,11 @@ resource "aws_apigatewayv2_route" "auth_github_callback" {
   route_key = "GET /auth/github/callback"
   target    = "integrations/${aws_apigatewayv2_integration.auth_github_callback.id}"
   # No authorization - GitHub redirect endpoint
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.auth_github_callback.id]
+  }
 }
 
 resource "aws_apigatewayv2_integration" "auth_github_install_status" {
@@ -88,6 +106,10 @@ resource "aws_apigatewayv2_integration" "auth_github_install_status" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.auth_github_install_status.invoke_arn
   payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_route" "auth_github_install_status" {
@@ -96,6 +118,11 @@ resource "aws_apigatewayv2_route" "auth_github_install_status" {
   target             = "integrations/${aws_apigatewayv2_integration.auth_github_install_status.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.auth_github_install_status.id]
+  }
 }
 
 resource "aws_apigatewayv2_integration" "auth_github_install_redirect" {
@@ -103,6 +130,10 @@ resource "aws_apigatewayv2_integration" "auth_github_install_redirect" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.auth_github_install_redirect.invoke_arn
   payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_route" "auth_github_install_redirect" {
@@ -111,6 +142,11 @@ resource "aws_apigatewayv2_route" "auth_github_install_redirect" {
   target             = "integrations/${aws_apigatewayv2_integration.auth_github_install_redirect.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.auth_github_install_redirect.id]
+  }
 }
 
 # ============================================================================
@@ -125,10 +161,10 @@ resource "aws_lambda_permission" "deploy_api" {
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }
 
-resource "aws_lambda_permission" "manage_api" {
+resource "aws_lambda_permission" "deployments_api" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.manage.function_name
+  function_name = aws_lambda_function.deployments_api.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }
@@ -146,13 +182,21 @@ resource "aws_apigatewayv2_integration" "deploy" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.deploy.invoke_arn
   payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-resource "aws_apigatewayv2_integration" "manage" {
+resource "aws_apigatewayv2_integration" "deployments_api" {
   api_id                 = aws_apigatewayv2_api.main.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.manage.invoke_arn
+  integration_uri        = aws_lambda_function.deployments_api.invoke_arn
   payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_integration" "service" {
@@ -160,6 +204,10 @@ resource "aws_apigatewayv2_integration" "service" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.service.invoke_arn
   payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_route" "deploy" {
@@ -168,6 +216,11 @@ resource "aws_apigatewayv2_route" "deploy" {
   target             = "integrations/${aws_apigatewayv2_integration.deploy.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.deploy.id]
+  }
 }
 
 resource "aws_apigatewayv2_route" "services_list" {
@@ -176,6 +229,11 @@ resource "aws_apigatewayv2_route" "services_list" {
   target             = "integrations/${aws_apigatewayv2_integration.service.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.service.id]
+  }
 }
 
 resource "aws_apigatewayv2_route" "services_get" {
@@ -184,14 +242,24 @@ resource "aws_apigatewayv2_route" "services_get" {
   target             = "integrations/${aws_apigatewayv2_integration.service.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.service.id]
+  }
 }
 
 resource "aws_apigatewayv2_route" "deployments_list" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "GET /deployments"
-  target             = "integrations/${aws_apigatewayv2_integration.manage.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.deployments_api.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.deployments_api.id]
+  }
 }
 
 resource "aws_apigatewayv2_route" "deployments_create" {
@@ -200,6 +268,11 @@ resource "aws_apigatewayv2_route" "deployments_create" {
   target             = "integrations/${aws_apigatewayv2_integration.deploy.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.deploy.id]
+  }
 }
 
 # Logs API Integration
@@ -216,6 +289,10 @@ resource "aws_apigatewayv2_integration" "logs_api" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.logs_api.invoke_arn
   payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_route" "deployment_logs" {
@@ -224,6 +301,11 @@ resource "aws_apigatewayv2_route" "deployment_logs" {
   target             = "integrations/${aws_apigatewayv2_integration.logs_api.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.logs_api.id]
+  }
 }
 
 # GET /me Integration
@@ -232,6 +314,10 @@ resource "aws_apigatewayv2_integration" "auth_me" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.auth_me.invoke_arn
   payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_route" "auth_me" {
@@ -240,6 +326,11 @@ resource "aws_apigatewayv2_route" "auth_me" {
   target             = "integrations/${aws_apigatewayv2_integration.auth_me.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.auth_me.id]
+  }
 }
 
 # GET /github/repositories Integration
@@ -248,6 +339,10 @@ resource "aws_apigatewayv2_integration" "github_repositories" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.github_repositories.invoke_arn
   payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_apigatewayv2_route" "github_repositories" {
@@ -256,4 +351,9 @@ resource "aws_apigatewayv2_route" "github_repositories" {
   target             = "integrations/${aws_apigatewayv2_integration.github_repositories.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.github_repositories.id]
+  }
 }

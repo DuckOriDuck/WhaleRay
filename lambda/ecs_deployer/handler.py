@@ -15,6 +15,7 @@ SERVICES_TABLE = os.environ['SERVICES_TABLE']
 TASK_EXECUTION_ROLE = os.environ['TASK_EXECUTION_ROLE']
 TASK_ROLE = os.environ['TASK_ROLE']
 TARGET_GROUP_ARN = os.environ['TARGET_GROUP_ARN']
+FRONTEND_URL = os.environ['FRONTEND_URL']
 
 deployments_table = dynamodb.Table(DEPLOYMENTS_TABLE)
 services_table = dynamodb.Table(SERVICES_TABLE)
@@ -164,7 +165,7 @@ def handler(event, context):
         )
 
         # 이전 RUNNING 상태의 배포를 SUPERSEDED로 변경
-        supersede_previous_deployment(deployment_id, service_id)
+        supersede_previous_deployment(deployment, service_id)
 
         print(f"Service {action}: {service_id}")
 
@@ -196,20 +197,27 @@ def handler(event, context):
         }
 
 
-def supersede_previous_deployment(current_deployment_id: str, service_id: str):
+def supersede_previous_deployment(current_deployment: dict, service_id: str):
     """
     services 테이블을 사용하여 이전 활성 배포를 SUPERSEDED로 만들고,
     새로운 배포 ID로 activeDeploymentId를 업데이트
     """
     print(f"Superseding previous deployment for service '{service_id}'...")
     try:
+        current_deployment_id = current_deployment['deploymentId']
+        user_id = current_deployment['userId']
+        # 서비스별 고유 URL 생성 (예: https://whaleray.oriduck.com/service/github_12345_my-repo)
+        service_url = f"{FRONTEND_URL}/service/{service_id}"
+
         # 1. services 테이블에서 이전 activeDeploymentId를 가져옵니다.
         service_response = services_table.get_item(Key={'serviceId': service_id})
         old_active_deployment_id = service_response.get('Item', {}).get('activeDeploymentId')
 
         # 2. 이전 배포가 존재하면 SUPERSEDED로 상태를 변경합니다.
         if old_active_deployment_id and old_active_deployment_id != current_deployment_id:
-            print(f"Found previous active deployment {old_active_deployment_id}, updating to SUPERSEDED.")
+            print(
+                f"Found previous active deployment {old_active_deployment_id}, updating to SUPERSEDED."
+            )
             update_deployment_status(
                 DEPLOYMENTS_TABLE,
                 old_active_deployment_id,
@@ -219,8 +227,13 @@ def supersede_previous_deployment(current_deployment_id: str, service_id: str):
         # 3. services 테이블의 activeDeploymentId를 현재 배포 ID로 업데이트합니다.
         services_table.update_item(
             Key={'serviceId': service_id},
-            UpdateExpression='SET activeDeploymentId = :did',
-            ExpressionAttributeValues={':did': current_deployment_id}
+            UpdateExpression='SET activeDeploymentId = :did, userId = :uid, #url = :url',
+            ExpressionAttributeNames={'#url': 'url'},
+            ExpressionAttributeValues={
+                ':did': current_deployment_id,
+                ':uid': user_id,
+                ':url': service_url
+            }
         )
         print(f"Service {service_id} active deployment updated to {current_deployment_id}.")
 

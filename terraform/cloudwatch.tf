@@ -4,8 +4,8 @@ resource "aws_cloudwatch_log_group" "lambda_deploy" {
   retention_in_days = 14
 }
 
-resource "aws_cloudwatch_log_group" "lambda_manage" {
-  name              = "/aws/lambda/${aws_lambda_function.manage.function_name}"
+resource "aws_cloudwatch_log_group" "lambda_deployments_api" {
+  name              = "/aws/lambda/${aws_lambda_function.deployments_api.function_name}"
   retention_in_days = 14
 }
 
@@ -46,6 +46,7 @@ resource "aws_cloudwatch_log_group" "codebuild_nextjs" {
 }
 
 # CloudWatch Dashboard
+/*
 resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = "${var.project_name}-overview"
 
@@ -61,7 +62,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           metrics = [
             ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.deploy.function_name],
-            ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.manage.function_name],
+            ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.deployments_api.function_name],
             ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.service.function_name],
             ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.ecs_deployer.function_name],
             ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.logs_api.function_name],
@@ -88,7 +89,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           metrics = [
             ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.deploy.function_name],
-            ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.manage.function_name],
+            ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.deployments_api.function_name],
             ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.service.function_name],
             ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.ecs_deployer.function_name],
             ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.logs_api.function_name],
@@ -115,7 +116,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           metrics = [
             ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.deploy.function_name],
-            ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.manage.function_name],
+            ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.deployments_api.function_name],
             ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.service.function_name],
             ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.ecs_deployer.function_name],
             ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.logs_api.function_name],
@@ -142,7 +143,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           metrics = [
             ["AWS/Lambda", "Throttles", "FunctionName", aws_lambda_function.deploy.function_name],
-            ["AWS/Lambda", "Throttles", "FunctionName", aws_lambda_function.manage.function_name],
+            ["AWS/Lambda", "Throttles", "FunctionName", aws_lambda_function.deployments_api.function_name],
             ["AWS/Lambda", "Throttles", "FunctionName", aws_lambda_function.service.function_name],
             ["AWS/Lambda", "Throttles", "FunctionName", aws_lambda_function.ecs_deployer.function_name],
             ["AWS/Lambda", "Throttles", "FunctionName", aws_lambda_function.logs_api.function_name],
@@ -390,6 +391,7 @@ resource "aws_cloudwatch_dashboard" "main" {
     ]
   })
 }
+*/
 
 # CloudWatch Alarms for critical issues
 

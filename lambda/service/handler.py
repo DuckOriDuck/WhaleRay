@@ -1,13 +1,28 @@
 import json
 import os
 import boto3
+import decimal
 from boto3.dynamodb.conditions import Key
+
+# --- Helper for JSON serialization ---
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, decimal.Decimal):
+            if o % 1 > 0:
+                return float(o)
+            else:
+                return int(o)
+        return super(DecimalEncoder, self).default(o)
+# -------------------------------------
 
 dynamodb = boto3.resource('dynamodb')
 
 SERVICES_TABLE = os.environ['SERVICES_TABLE']
+DEPLOYMENTS_TABLE = os.environ['DEPLOYMENTS_TABLE']
+FRONTEND_URL = os.environ.get('FRONTEND_URL', '*')
 
 services_table = dynamodb.Table(SERVICES_TABLE)
+deployments_table = dynamodb.Table(DEPLOYMENTS_TABLE)
 
 
 def handler(event, context):
@@ -55,12 +70,31 @@ def handler(event, context):
 
 
 def _list_services(user_id):
-    response = services_table.query(
+    services_response = services_table.query(
         IndexName='userId-index',
         KeyConditionExpression=Key('userId').eq(user_id)
     )
-    return _response(200, {'services': response.get('Items', [])})
+    services = services_response.get('Items', [])
 
+    # 각 서비스의 최신 배포 상태를 가져옵니다.
+    for service in services:
+        active_deployment_id = service.get('activeDeploymentId')
+        if active_deployment_id:
+            deployment_response = deployments_table.get_item(
+                Key={'deploymentId': active_deployment_id}
+            )
+            deployment = deployment_response.get('Item')
+            if deployment:
+                service['status'] = deployment.get('status', 'UNKNOWN')
+                service['updatedAt'] = deployment.get('updatedAt')
+                # 프론트엔드에서 필요한 다른 배포 정보도 추가할 수 있습니다.
+                # 예: service['repositoryFullName'] = deployment.get('repositoryFullName')
+            else:
+                service['status'] = 'NO_DEPLOYMENT'
+        else:
+            service['status'] = 'NOT_DEPLOYED'
+
+    return _response(200, {'services': services})
 
 def _get_service(user_id, service_id):
     if not service_id:
@@ -72,7 +106,18 @@ def _get_service(user_id, service_id):
     if not service or service.get('userId') != user_id:
         return _response(404, {'error': 'Service not found'})
 
-    return _response(200, {'service': service})
+    # 특정 서비스의 최근 배포 목록을 가져옵니다.
+    deployments_response = deployments_table.query(
+        IndexName='serviceId-createdAt-index', # 이 인덱스가 필요합니다.
+        KeyConditionExpression=Key('serviceId').eq(service_id),
+        ScanIndexForward=False, # 최신순으로 정렬
+        Limit=10
+    )
+
+    return _response(200, {
+        'service': service,
+        'deployments': deployments_response.get('Items', [])
+    })
 
 
 def _response(status_code, body):
@@ -80,7 +125,8 @@ def _response(status_code, body):
         'statusCode': status_code,
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': FRONTEND_URL,
+            'Access-Control-Allow-Credentials': True
         },
-        'body': json.dumps(body)
+        'body': json.dumps(body, cls=DecimalEncoder)
     }

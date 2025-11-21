@@ -21,8 +21,8 @@ export default function ServiceList({ onStartDeployment, onRefreshReady }) {
     try {
       setLoading(true)
       setError(null)
-      const data = await getServices()
-      setServices(data)
+      const response = await getServices()
+      setServices(response.services || []) // 응답 객체에서 services 배열을 추출
     } catch (err) {
       setError(err.message)
       // trigger install check only when service load fails

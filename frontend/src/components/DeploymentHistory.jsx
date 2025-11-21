@@ -18,8 +18,8 @@ export default function DeploymentHistory({ onRefreshReady }) {
     try {
       setLoading(true)
       setError(null)
-      const data = await getDeployments()
-      setDeployments(data)
+      const response = await getDeployments()
+      setDeployments(response.deployments || []) // 응답 객체에서 deployments 배열을 추출
     } catch (err) {
       setError(err.message)
     } finally {
