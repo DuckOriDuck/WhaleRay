@@ -263,7 +263,7 @@ resource "aws_lambda_function" "deploy" {
 
 locals {
   deployments_api_lambda_zip_path = "${path.module}/../build/deployments_api.zip"
-  service_lambda_zip_path = "${path.module}/../build/service.zip"
+  service_lambda_zip_path         = "${path.module}/../build/service.zip"
 }
 
 resource "null_resource" "archive_deployments_api_lambda" {
