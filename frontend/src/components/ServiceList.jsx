@@ -145,14 +145,51 @@ export default function ServiceList({ onStartDeployment, onRefreshReady }) {
       {services.map((service) => (
         <div key={service.serviceId} className="service-item">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-            <div>
+            <div style={{ flex: 1 }}>
               <div className="service-name">{service.serviceName}</div>
               <div style={{ fontSize: '14px', color: '#666', marginBottom: '8px' }}>
                 {service.imageUri}
               </div>
-              <div style={{ fontSize: '12px', color: '#999' }}>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>
                 포트: {service.port}
               </div>
+
+              {/* Service Endpoint */}
+              {service.serviceEndpoint && (
+                <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#666', fontWeight: '500' }}>
+                    🌐 API Endpoint:
+                  </span>
+                  <a
+                    href={service.serviceEndpoint}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: '12px',
+                      color: '#2563eb',
+                      textDecoration: 'none',
+                      padding: '4px 8px',
+                      backgroundColor: '#eff6ff',
+                      borderRadius: '4px',
+                      border: '1px solid #bfdbfe',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    onMouseOver={(e) => {
+                      e.target.style.backgroundColor = '#dbeafe'
+                      e.target.style.borderColor = '#93c5fd'
+                    }}
+                    onMouseOut={(e) => {
+                      e.target.style.backgroundColor = '#eff6ff'
+                      e.target.style.borderColor = '#bfdbfe'
+                    }}
+                  >
+                    {service.serviceEndpoint}
+                    <span style={{ fontSize: '10px' }}>↗</span>
+                  </a>
+                </div>
+              )}
             </div>
             <span className={`service-status ${service.status.toLowerCase()}`}>
               {service.status}

@@ -55,7 +55,7 @@ export async function getServices() {
   }
 
   const data = await response.json()
-  return data.services || []
+  return data // 전체 응답 객체 반환 (data.services 포함)
 }
 
 /**
@@ -92,7 +92,7 @@ export async function getDeployments() {
   }
 
   const data = await response.json()
-  return data.deployments || []
+  return data // 전체 응답 객체 반환 (data.deployments 포함)
 }
 
 /**

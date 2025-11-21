@@ -96,3 +96,9 @@ variable "github_app_private_key" {
   sensitive   = true
   default     = ""
 }
+
+variable "service_domain_prefix" {
+  description = "Subdomain prefix for deployed services (e.g., 'service' for service.domain.com)"
+  type        = string
+  default     = "service"
+}

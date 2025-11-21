@@ -14,8 +14,9 @@ DEPLOYMENTS_TABLE = os.environ['DEPLOYMENTS_TABLE']
 SERVICES_TABLE = os.environ['SERVICES_TABLE']
 TASK_EXECUTION_ROLE = os.environ['TASK_EXECUTION_ROLE']
 TASK_ROLE = os.environ['TASK_ROLE']
-TARGET_GROUP_ARN = os.environ['TARGET_GROUP_ARN']
 FRONTEND_URL = os.environ['FRONTEND_URL']
+APP_CAPACITY_PROVIDER = os.environ['APP_CAPACITY_PROVIDER']
+SERVICE_DISCOVERY_REGISTRY_ARN = os.environ['SERVICE_DISCOVERY_REGISTRY_ARN']
 
 deployments_table = dynamodb.Table(DEPLOYMENTS_TABLE)
 services_table = dynamodb.Table(SERVICES_TABLE)
@@ -145,9 +146,16 @@ def handler(event, context):
                 serviceName=service_id,
                 taskDefinition=task_def_arn,
                 desiredCount=1,
-                launchType='EC2',
-                loadBalancers=[{
-                    'targetGroupArn': TARGET_GROUP_ARN,
+                # launchType 대신 capacityProviderStrategy 사용
+                capacityProviderStrategy=[{
+                    'capacityProvider': APP_CAPACITY_PROVIDER,
+                    'weight': 1,
+                    'base': 1
+                }],
+                # Cloud Map 서비스 검색 등록 (SRV 레코드)
+                # Bridge 네트워크 모드에서는 containerName과 containerPort를 사용해야 함
+                serviceRegistries=[{
+                    'registryArn': SERVICE_DISCOVERY_REGISTRY_ARN,
                     'containerName': service_name,
                     'containerPort': port
                 }]
@@ -155,6 +163,9 @@ def handler(event, context):
             action = 'created'
 
         # Deployments 테이블 업데이트
+        # 배포 성공 시점에 엔드포인트가 확정되므로 여기가 더 적합합니다.
+        service_endpoint = f"https://{os.environ['API_DOMAIN']}/{service_id}"
+
         update_deployment_status(
             DEPLOYMENTS_TABLE,
             deployment_id,
@@ -165,7 +176,7 @@ def handler(event, context):
         )
 
         # 이전 RUNNING 상태의 배포를 SUPERSEDED로 변경
-        supersede_previous_deployment(deployment, service_id)
+        supersede_previous_deployment(deployment, service_id, service_endpoint)
 
         print(f"Service {action}: {service_id}")
 
@@ -197,7 +208,7 @@ def handler(event, context):
         }
 
 
-def supersede_previous_deployment(current_deployment: dict, service_id: str):
+def supersede_previous_deployment(current_deployment: dict, service_id: str, service_endpoint: str):
     """
     services 테이블을 사용하여 이전 활성 배포를 SUPERSEDED로 만들고,
     새로운 배포 ID로 activeDeploymentId를 업데이트
@@ -206,8 +217,9 @@ def supersede_previous_deployment(current_deployment: dict, service_id: str):
     try:
         current_deployment_id = current_deployment['deploymentId']
         user_id = current_deployment['userId']
-        # 서비스별 고유 URL 생성 (예: https://whaleray.oriduck.com/service/github_12345_my-repo)
-        service_url = f"{FRONTEND_URL}/service/{service_id}"
+        service_name = current_deployment.get('serviceName', service_id)
+
+        # Cloud Map DNS는 내부 통신용이므로 저장하지 않음
 
         # 1. services 테이블에서 이전 activeDeploymentId를 가져옵니다.
         service_response = services_table.get_item(Key={'serviceId': service_id})
@@ -225,17 +237,26 @@ def supersede_previous_deployment(current_deployment: dict, service_id: str):
             )
 
         # 3. services 테이블의 activeDeploymentId를 현재 배포 ID로 업데이트합니다.
+        update_expression_parts = [
+            'activeDeploymentId = :did',
+            'userId = :uid', # GSI용
+            'serviceName = :sname',
+            'serviceEndpoint = :endpoint'
+        ]
+        expression_attr_values = {
+            ':did': current_deployment_id,
+            ':uid': user_id,
+            ':sname': service_name,
+            ':endpoint': service_endpoint
+        }
+
         services_table.update_item(
             Key={'serviceId': service_id},
-            UpdateExpression='SET activeDeploymentId = :did, userId = :uid, #url = :url',
-            ExpressionAttributeNames={'#url': 'url'},
-            ExpressionAttributeValues={
-                ':did': current_deployment_id,
-                ':uid': user_id,
-                ':url': service_url
-            }
+            UpdateExpression='SET ' + ', '.join(update_expression_parts),
+            ExpressionAttributeValues=expression_attr_values
         )
         print(f"Service {service_id} active deployment updated to {current_deployment_id}.")
+        print(f"Service endpoint: {service_endpoint}")
 
     except Exception as e:
         # 이 로직은 메인 배포 흐름에 영향을 주지 않도록 오류를 로깅만 합니다.

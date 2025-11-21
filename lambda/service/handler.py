@@ -59,42 +59,64 @@ def handler(event, context):
         if method and path:
             route_key = f"{method} {path}"
 
+    print(f"Determined route_key: {route_key}")
     path_params = event.get('pathParameters', {}) or {}
 
     if route_key == 'GET /services':
+        print("Routing to _list_services")
         return _list_services(user_id)
     if route_key == 'GET /services/{serviceId}':
+        print(f"Routing to _get_service with serviceId={path_params.get('serviceId')}")
         return _get_service(user_id, path_params.get('serviceId'))
 
+    print(f"Route not found: {route_key}")
     return _response(404, {'error': 'Route not found'})
 
 
 def _list_services(user_id):
-    services_response = services_table.query(
-        IndexName='userId-index',
-        KeyConditionExpression=Key('userId').eq(user_id)
-    )
-    services = services_response.get('Items', [])
+    print(f"[_list_services] Starting query for user_id={user_id}")
 
-    # 각 서비스의 최신 배포 상태를 가져옵니다.
-    for service in services:
-        active_deployment_id = service.get('activeDeploymentId')
-        if active_deployment_id:
-            deployment_response = deployments_table.get_item(
-                Key={'deploymentId': active_deployment_id}
-            )
-            deployment = deployment_response.get('Item')
-            if deployment:
-                service['status'] = deployment.get('status', 'UNKNOWN')
-                service['updatedAt'] = deployment.get('updatedAt')
-                # 프론트엔드에서 필요한 다른 배포 정보도 추가할 수 있습니다.
-                # 예: service['repositoryFullName'] = deployment.get('repositoryFullName')
+    try:
+        services_response = services_table.query(
+            IndexName='userId-index',
+            KeyConditionExpression=Key('userId').eq(user_id)
+        )
+        print(f"[_list_services] Query response: {json.dumps(services_response, cls=DecimalEncoder)}")
+
+        services = services_response.get('Items', [])
+        print(f"[_list_services] Found {len(services)} services")
+
+        # 각 서비스의 최신 배포 상태를 가져옵니다.
+        for idx, service in enumerate(services):
+            service_id = service.get('serviceId')
+            print(f"[_list_services] Processing service {idx+1}/{len(services)}: {service_id}")
+
+            active_deployment_id = service.get('activeDeploymentId')
+            if active_deployment_id:
+                print(f"[_list_services] Fetching deployment: {active_deployment_id}")
+                deployment_response = deployments_table.get_item(
+                    Key={'deploymentId': active_deployment_id}
+                )
+                deployment = deployment_response.get('Item')
+                if deployment:
+                    service['status'] = deployment.get('status', 'UNKNOWN')
+                    service['updatedAt'] = deployment.get('updatedAt')
+                    print(f"[_list_services] Deployment found, status={service['status']}")
+                else:
+                    service['status'] = 'NO_DEPLOYMENT'
+                    print(f"[_list_services] Deployment not found")
             else:
-                service['status'] = 'NO_DEPLOYMENT'
-        else:
-            service['status'] = 'NOT_DEPLOYED'
+                service['status'] = 'NOT_DEPLOYED'
+                print(f"[_list_services] No active deployment")
 
-    return _response(200, {'services': services})
+        print(f"[_list_services] Returning {len(services)} services")
+        return _response(200, {'services': services})
+
+    except Exception as e:
+        print(f"[_list_services] ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return _response(500, {'error': str(e)})
 
 def _get_service(user_id, service_id):
     if not service_id:
