@@ -12,7 +12,7 @@ resource "aws_lb_target_group" "router" {
   port        = 80
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
-  target_type = "instance" # EC2 launch type uses instance target type
+  target_type = "ip" # Fargate with awsvpc uses IP target type
 
   health_check {
     path                = "/health"
@@ -140,12 +140,12 @@ resource "aws_security_group" "router" {
 }
 
 # ============================================
-# Router ECS Task Definition
+# Router ECS Task Definition (Fargate)
 # ============================================
 resource "aws_ecs_task_definition" "router" {
   family                   = "${var.project_name}-router"
-  network_mode             = "bridge" # Required for EC2 launch type with dynamic ports
-  requires_compatibilities = ["EC2"]
+  network_mode             = "awsvpc" # Required for Fargate
+  requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
   cpu                      = "256"
@@ -155,13 +155,11 @@ resource "aws_ecs_task_definition" "router" {
     name      = "nginx"
     image     = local.router_image_uri # Use our custom image
     essential = true
-    cpu       = 256
-    memory    = 512
 
     portMappings = [{
       containerPort = 80
-      hostPort      = 0 # Dynamic port mapping
       protocol      = "tcp"
+      # No hostPort for Fargate
     }]
 
     logConfiguration = {
@@ -192,25 +190,27 @@ resource "aws_ecs_task_definition" "router" {
 }
 
 # ============================================
-# Router ECS Service
+# Router ECS Service (Fargate)
 # ============================================
 resource "aws_ecs_service" "router" {
   name            = "${var.project_name}-router"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.router.arn
   desired_count   = 2 # High availability with minimum 2 tasks
+  launch_type     = "FARGATE"
+
+  # Network configuration for Fargate
+  network_configuration {
+    subnets          = aws_subnet.private[*].id
+    security_groups  = [aws_security_group.router.id]
+    assign_public_ip = false
+  }
 
   # Load balancer configuration
   load_balancer {
     target_group_arn = aws_lb_target_group.router.arn
     container_name   = "nginx"
     container_port   = 80
-  }
-
-  # Placement strategy: binpack on memory for efficient resource usage
-  ordered_placement_strategy {
-    type  = "binpack"
-    field = "memory"
   }
 
   # Deploy configuration
@@ -221,20 +221,12 @@ resource "aws_ecs_service" "router" {
   # Health check grace period
   health_check_grace_period_seconds = 60
 
-  # Use capacity provider for automatic scaling
-  capacity_provider_strategy {
-    capacity_provider = aws_ecs_capacity_provider.router_instances.name
-    weight            = 100
-    base              = 2 # 최소 2개의 태스크를 이 공급자에 배포
-  }
-
   tags = {
     Name = "${var.project_name}-router-service"
   }
 
   depends_on = [
     aws_lb_listener_rule.service_domain,
-    aws_ecs_cluster_capacity_providers.main,
     null_resource.build_and_push_router_image # Ensure image is pushed before service is created/updated
   ]
 }

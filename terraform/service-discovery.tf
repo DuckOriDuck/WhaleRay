@@ -23,7 +23,7 @@ resource "aws_service_discovery_service" "app_services" {
 
     dns_records {
       ttl  = 10
-      type = "SRV" # Bridge network mode requires SRV records
+      type = "A" # Fargate with awsvpc network mode uses A records
     }
 
     routing_policy = "MULTIVALUE"

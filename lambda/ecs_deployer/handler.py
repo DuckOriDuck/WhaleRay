@@ -15,8 +15,10 @@ SERVICES_TABLE = os.environ['SERVICES_TABLE']
 TASK_EXECUTION_ROLE = os.environ['TASK_EXECUTION_ROLE']
 TASK_ROLE = os.environ['TASK_ROLE']
 FRONTEND_URL = os.environ['FRONTEND_URL']
-APP_CAPACITY_PROVIDER = os.environ['APP_CAPACITY_PROVIDER']
 SERVICE_DISCOVERY_REGISTRY_ARN = os.environ['SERVICE_DISCOVERY_REGISTRY_ARN']
+# Fargate network configuration
+PRIVATE_SUBNETS = os.environ['PRIVATE_SUBNETS']
+FARGATE_TASK_SG = os.environ['FARGATE_TASK_SG']
 
 deployments_table = dynamodb.Table(DEPLOYMENTS_TABLE)
 services_table = dynamodb.Table(SERVICES_TABLE)
@@ -87,8 +89,10 @@ def handler(event, context):
 
         task_definition = ecs.register_task_definition(
             family=task_def_name,
-            networkMode='bridge',
-            requiresCompatibilities=['EC2'],
+            cpu='256',  # Fargate requires explicit CPU
+            memory='512',  # Fargate requires explicit memory
+            networkMode='awsvpc',  # Fargate requires awsvpc
+            requiresCompatibilities=['FARGATE'],
             executionRoleArn=TASK_EXECUTION_ROLE,
             taskRoleArn=TASK_ROLE,
             containerDefinitions=[
@@ -96,11 +100,10 @@ def handler(event, context):
                     'name': service_name,
                     'image': ecr_image_uri,
                     'essential': True,
-                    'memory': 512,
                     'portMappings': [{
                         'containerPort': port,
-                        'hostPort': 0,  # 동적 포트 매핑
                         'protocol': 'tcp'
+                        # No hostPort for Fargate with awsvpc
                     }],
                     'environment': deployment.get('envVars', []),
                     'logConfiguration': {
@@ -140,24 +143,25 @@ def handler(event, context):
                 raise Exception('Service not found or inactive')
 
         except Exception:
-            # 새 서비스 생성
+            # 새 서비스 생성 (Fargate)
             ecs.create_service(
                 cluster=CLUSTER_NAME,
                 serviceName=service_id,
                 taskDefinition=task_def_arn,
                 desiredCount=1,
-                # launchType 대신 capacityProviderStrategy 사용
-                capacityProviderStrategy=[{
-                    'capacityProvider': APP_CAPACITY_PROVIDER,
-                    'weight': 1,
-                    'base': 1
-                }],
-                # Cloud Map 서비스 검색 등록 (SRV 레코드)
-                # Bridge 네트워크 모드에서는 containerName과 containerPort를 사용해야 함
+                launchType='FARGATE',
+                networkConfiguration={
+                    'awsvpcConfiguration': {
+                        'subnets': os.environ['PRIVATE_SUBNETS'].split(','),
+                        'securityGroups': [os.environ['FARGATE_TASK_SG']],
+                        'assignPublicIp': 'DISABLED'
+                    }
+                },
+                # Cloud Map 서비스 검색 등록 (A 레코드)
+                # awsvpc 네트워크 모드에서는 containerName만 사용
                 serviceRegistries=[{
                     'registryArn': SERVICE_DISCOVERY_REGISTRY_ARN,
-                    'containerName': service_name,
-                    'containerPort': port
+                    'containerName': service_name
                 }]
             )
             action = 'created'

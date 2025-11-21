@@ -389,8 +389,9 @@ resource "aws_lambda_function" "ecs_deployer" {
       ECR_REPOSITORY_URL  = aws_ecr_repository.app_repo.repository_url
       FRONTEND_URL        = "https://${var.domain_name}"
       API_DOMAIN          = "${var.service_domain_prefix}.${var.domain_name}"
-      # 사용자 앱이 배포될 Capacity Provider와 Cloud Map 네임스페이스 정보 추가
-      APP_CAPACITY_PROVIDER          = aws_ecs_capacity_provider.app_instances.name
+      # Fargate 네트워크 설정
+      PRIVATE_SUBNETS                = join(",", aws_subnet.private[*].id)
+      FARGATE_TASK_SG                = aws_security_group.fargate_tasks.id
       SERVICE_DISCOVERY_REGISTRY_ARN = aws_service_discovery_service.app_services.arn
     }
   }
