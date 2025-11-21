@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getServices, getGitHubInstallationStatus } from '../lib/api'
 import { config } from '../config'
 
-export default function ServiceList({ onStartDeployment }) {
+export default function ServiceList({ onStartDeployment, onRefreshReady }) {
   const [services, setServices] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -11,14 +11,18 @@ export default function ServiceList({ onStartDeployment }) {
 
   useEffect(() => {
     loadServices()
+    // Pass refresh function to parent
+    if (onRefreshReady) {
+      onRefreshReady(loadServices)
+    }
   }, [])
 
   async function loadServices() {
     try {
       setLoading(true)
       setError(null)
-      const data = await getServices()
-      setServices(data)
+      const response = await getServices()
+      setServices(response.services || []) // 응답 객체에서 services 배열을 추출
     } catch (err) {
       setError(err.message)
       // trigger install check only when service load fails

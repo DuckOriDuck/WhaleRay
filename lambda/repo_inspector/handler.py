@@ -6,7 +6,7 @@ from typing import Dict, Optional
 import requests
 
 # Lambda Layer에서 공통 유틸리티 함수 가져오기
-from github_utils import get_installation_access_token
+from github_utils import get_installation_access_token, update_deployment_status
 
 # Boto3 클라이언트 초기화
 codebuild = boto3.client('codebuild')
@@ -50,43 +50,56 @@ def handler(event, context):
         framework = detect_framework(repository_full_name, branch, installation_access_token)
         
         if not framework:
-            # 지원하지 않는 프레임워크는 실패가 아닌 별도 상태로 처리
-            print(f"Unsupported framework for repository {repository_full_name}. Setting status to NOT_SUPPORTED.")
-            _update_deployment_status(deployment_id, 'NOT_SUPPORTED', framework=framework)
-            return {'status': 'NOT_SUPPORTED'}
+            # 지원하지 않는 프레임워크는 INSPECTING_FAIL로 처리
+            error_message = f"Could not detect a supported framework for repository {repository_full_name}. Supported frameworks are Spring Boot, Node.js, and Next.js."
+            print(error_message)
+            update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'INSPECTING_FAIL', framework=None)
+            # 람다를 성공적으로 종료하여 재시도를 방지
+            return {'status': 'INSPECTING_FAIL'}
 
         # 3. 프레임워크에 맞는 CodeBuild 프로젝트 선택
         codebuild_project = select_codebuild_project(framework)
 
-        # select_codebuild_project가 None을 반환하는 경우는 현재 로직상 없지만, 방어 코드 추가
         if not codebuild_project:
-            print(f"Unsupported framework '{framework}' for repository {repository_full_name}. Setting status to NOT_SUPPORTED.")
-            _update_deployment_status(
-                deployment_id,
-                'NOT_SUPPORTED',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':status': 'NOT_SUPPORTED',
-                    ':updatedAt': int(time.time()),
-                    ':framework': framework
-                }
-            )
-            return {'status': 'NOT_SUPPORTED'}
+            # 이 경우는 발생할 가능성이 낮지만, 방어 코드로 남겨둡니다.
+            error_message = f"Framework '{framework}' was detected, but no corresponding CodeBuild project is defined."
+            print(error_message)
+            update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'INSPECTING_FAIL', framework=framework)
+            # 람다를 성공적으로 종료하여 재시도를 방지
+            return {'status': 'INSPECTING_FAIL'}
 
-        # 4. 배포 상태를 'BUILDING'으로 업데이트 (피드백 반영)
-        # 실제 CodeBuild 실행 로직은 생략하고 상태만 업데이트합니다.
-        # TODO 여기에 Codebuild 실행 로직 들어갈 예정
-        print(f"Framework '{framework}' detected. Updating status to BUILDING for deployment {deployment_id}.")
-        _update_deployment_status(
+        # 4. CodeBuild 프로젝트 실행
+        print(f"Starting CodeBuild project '{codebuild_project}' for deployment {deployment_id}")
+        codebuild.start_build(
+            projectName=codebuild_project,
+            sourceVersion=branch,  # 빌드할 브랜치 지정
+            sourceLocationOverride=f"https://github.com/{repository_full_name}.git", # 동적으로 소스 저장소 위치 지정
+            logsConfigOverride={
+                'cloudWatchLogs': {
+                    'status': 'ENABLED',
+                    # 로그 스트림 이름을 deploymentId로 고정하여 빌드 로그를 격리합니다.
+                    'streamName': deployment_id
+                }
+            },
+            environmentVariablesOverride=[
+                {'name': 'DEPLOYMENT_ID', 'value': deployment_id, 'type': 'PLAINTEXT'},
+                {'name': 'REPOSITORY_FULL_NAME', 'value': repository_full_name, 'type': 'PLAINTEXT'},
+                {'name': 'INSTALLATION_ID', 'value': str(installation_id), 'type': 'PLAINTEXT'},
+                {'name': 'ECR_IMAGE_URI', 'value': f"{ECR_REPOSITORY_URL}:{deployment_id}", 'type': 'PLAINTEXT'}
+            ]
+        )
+        print(f"Successfully started CodeBuild for deployment {deployment_id}")
+
+        # 5. 배포 상태를 'BUILDING'으로 업데이트
+        print(f"Updating status to BUILDING for deployment {deployment_id}.")
+        update_deployment_status(
+            DEPLOYMENTS_TABLE,
             deployment_id, 'BUILDING',
             framework=framework,
             codebuild_project=codebuild_project
         )
-        print(f"Successfully updated status to BUILDING for deployment {deployment_id}")
+        print(f"Successfully updated deployment status to BUILDING for deployment {deployment_id}")
         
-        # TODO: 이후 단계에서 CodeBuild 실행 로직 추가
-        # codebuild.start_build(...)
-
         return {'status': 'BUILDING'}
 
     except Exception as e:
@@ -95,7 +108,7 @@ def handler(event, context):
         error_message = traceback.format_exc()
         print(error_message)
         # 오류 발생 시 Deployment 상태를 FAILED로 업데이트
-        _update_deployment_status(deployment_id, 'FAILED', error_message=str(e), framework=framework)
+        update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'INSPECTING_FAIL', framework=framework)
         raise # 람다 재시도를 위해 에러를 다시 발생시킴
 
 
@@ -122,8 +135,6 @@ def detect_framework(repository_full_name: str, branch: str, github_token: str) 
         return 'nextjs'
     if check_file_exists('package.json'):
         return 'nodejs'
-    if check_file_exists('requirements.txt'):
-        return 'python'
     
     return None
 
@@ -135,40 +146,6 @@ def select_codebuild_project(framework: str) -> Optional[str]:
     mapping = {
         'spring-boot': f'{PROJECT_NAME}-spring-boot',
         'nodejs': f'{PROJECT_NAME}-nodejs',
-        'nextjs': f'{PROJECT_NAME}-nextjs',
-        'python': f'{PROJECT_NAME}-python'
+        'nextjs': f'{PROJECT_NAME}-nextjs'
     }
     return mapping.get(framework)
-
-
-def _update_deployment_status(deployment_id: str, status: str, **kwargs):
-    """
-    DynamoDB의 배포 상태를 업데이트하는 헬퍼 함수
-    """
-    print(f"Updating deployment {deployment_id} to status {status} with details: {kwargs}")
-    try:
-        update_expression = 'SET #status = :status, updatedAt = :updatedAt'
-        expression_attribute_names = {'#status': 'status'}
-        expression_attribute_values = {
-            ':status': status,
-            ':updatedAt': int(time.time())
-        }
-
-        # 추가적인 속성들을 동적으로 처리
-        for key, value in kwargs.items():
-            if value is not None:
-                attr_name_key = f'#{key}'
-                attr_value_key = f':{key}'
-                update_expression += f', {attr_name_key} = {attr_value_key}'
-                expression_attribute_names[attr_name_key] = key
-                expression_attribute_values[attr_value_key] = value
-
-        deployments_table.update_item(
-            Key={'deploymentId': deployment_id},
-            UpdateExpression=update_expression,
-            ExpressionAttributeNames=expression_attribute_names,
-            ExpressionAttributeValues=expression_attribute_values
-        )
-        print(f"Successfully updated deployment {deployment_id} status to {status}.")
-    except Exception as e:
-        print(f"CRITICAL: Failed to update deployment {deployment_id} status to {status}. Error: {str(e)}")

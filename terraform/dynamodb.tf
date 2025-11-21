@@ -65,6 +65,11 @@ resource "aws_dynamodb_table" "deployments" {
   }
 
   attribute {
+    name = "serviceId"
+    type = "S"
+  }
+
+  attribute {
     name = "createdAt"
     type = "N"
   }
@@ -72,6 +77,14 @@ resource "aws_dynamodb_table" "deployments" {
   global_secondary_index {
     name            = "userId-index"
     hash_key        = "userId"
+    range_key       = "createdAt"
+    projection_type = "ALL"
+  }
+
+  # serviceId로 배포 이력을 조회하기 위한 GSI
+  global_secondary_index {
+    name            = "serviceId-createdAt-index"
+    hash_key        = "serviceId"
     range_key       = "createdAt"
     projection_type = "ALL"
   }

@@ -1,0 +1,19 @@
+version: 0.2
+phases:
+  pre_build:
+    commands:
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
+  build:
+    commands:
+      - echo "Build started for Spring Boot on `date`"
+      - |
+        if [ -f "pom.xml" ]; then
+          mvn clean package -DskipTests
+        elif [ -f "build.gradle" ]; then
+          ./gradlew build -x test
+        fi
+      - docker build -t $ECR_IMAGE_URI .
+  post_build:
+    commands:
+      - docker push $ECR_IMAGE_URI

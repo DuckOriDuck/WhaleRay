@@ -44,7 +44,8 @@ resource "aws_iam_role_policy" "lambda" {
           aws_dynamodb_table.deployments.arn,
           "${aws_dynamodb_table.deployments.arn}/index/*",
           aws_dynamodb_table.services.arn,
-          "${aws_dynamodb_table.services.arn}/index/*",
+          "${aws_dynamodb_table.services.arn}/index/*"
+          ,
           # [ADDED] installations 테이블 접근 권한 추가
           aws_dynamodb_table.installations.arn,
           "${aws_dynamodb_table.installations.arn}/index/*"
@@ -160,53 +161,88 @@ resource "null_resource" "common_layer_dependencies" {
   }
 }
 
-data "archive_file" "common_layer_zip" {
-  type        = "zip"
-  source_dir  = "${path.module}/../build/layers/common"
-  output_path = "${path.module}/../build/common_layer.zip"
-  depends_on  = [null_resource.common_layer_dependencies]
+locals {
+  common_layer_zip_path = "${path.module}/../build/common_layer.zip"
+}
+
+resource "null_resource" "archive_common_layer" {
+  depends_on = [null_resource.common_layer_dependencies]
+
+  triggers = {
+    # Re-create zip when dependencies change
+    requirements_sha = filesha256("${path.module}/../lambda/layers/common_requirements.txt")
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../build/layers/common ${local.common_layer_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
 }
 
 resource "aws_lambda_layer_version" "common_libs_layer" {
+  depends_on = [null_resource.archive_common_layer]
+
   layer_name          = "${var.project_name}-common-libs"
   description         = "Common Python libraries like PyJWT, requests, cryptography"
-  filename            = data.archive_file.common_layer_zip.output_path
-  source_code_hash    = data.archive_file.common_layer_zip.output_base64sha256
+  filename            = local.common_layer_zip_path
+  source_code_hash    = try(filebase64sha256(local.common_layer_zip_path), null)
   compatible_runtimes = ["python3.11"]
 }
 
 # github_utils.py와 같은 공유 코드를 포함하는 레이어
-data "archive_file" "github_utils_layer_zip" {
-  type        = "zip"
-  source_dir  = "${path.module}/../lambda/layers/github_utils"
-  output_path = "${path.module}/../build/github_utils_layer.zip"
+locals {
+  github_utils_layer_zip_path = "${path.module}/../build/github_utils_layer.zip"
+}
+
+resource "null_resource" "archive_github_utils_layer" {
+  triggers = {
+    # Re-create when source files change
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/layers/github_utils", "**") : filesha1("${path.module}/../lambda/layers/github_utils/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/layers/github_utils ${local.github_utils_layer_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
 }
 
 resource "aws_lambda_layer_version" "github_utils_layer" {
+  depends_on = [null_resource.archive_github_utils_layer]
+
   layer_name          = "${var.project_name}-github-utils"
   description         = "Shared utility functions for GitHub interaction"
-  filename            = data.archive_file.github_utils_layer_zip.output_path
-  source_code_hash    = data.archive_file.github_utils_layer_zip.output_base64sha256
+  filename            = local.github_utils_layer_zip_path
+  source_code_hash    = try(filebase64sha256(local.github_utils_layer_zip_path), null)
   compatible_runtimes = ["python3.11"]
 }
 
-data "archive_file" "deploy_lambda" {
-  depends_on  = [null_resource.clean_lambda_pycache]
-  type        = "zip"
-  source_dir  = "${path.module}/../lambda/deploy"
-  output_path = "${path.module}/.terraform/lambda-deploy.zip"
-  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
+locals {
+  deploy_lambda_zip_path = "${path.module}/../build/deploy.zip"
+}
+
+resource "null_resource" "archive_deploy_lambda" {
+  depends_on = [null_resource.clean_lambda_pycache]
+
+  triggers = {
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/deploy", "**") : filesha1("${path.module}/../lambda/deploy/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/deploy ${local.deploy_lambda_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
 }
 
 resource "aws_lambda_function" "deploy" {
-  filename      = data.archive_file.deploy_lambda.output_path
+  depends_on    = [null_resource.archive_deploy_lambda]
+  filename      = local.deploy_lambda_zip_path
   function_name = "${var.project_name}-deploy"
   role          = aws_iam_role.lambda.arn
   handler       = "handler.handler"
   runtime       = "python3.11"
   timeout       = 300
 
-  source_code_hash = data.archive_file.deploy_lambda.output_base64sha256
+  source_code_hash = try(filebase64sha256(local.deploy_lambda_zip_path), null)
 
   environment {
     variables = {
@@ -225,31 +261,52 @@ resource "aws_lambda_function" "deploy" {
   }
 }
 
-data "archive_file" "manage_lambda" {
-  depends_on  = [null_resource.clean_lambda_pycache]
-  type        = "zip"
-  source_dir  = "${path.module}/../lambda/manage"
-  output_path = "${path.module}/.terraform/lambda-manage.zip"
-  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
+locals {
+  deployments_api_lambda_zip_path = "${path.module}/../build/deployments_api.zip"
+  service_lambda_zip_path         = "${path.module}/../build/service.zip"
 }
 
-data "archive_file" "service_lambda" {
-  depends_on  = [null_resource.clean_lambda_pycache]
-  type        = "zip"
-  source_dir  = "${path.module}/../lambda/service"
-  output_path = "${path.module}/.terraform/lambda-service.zip"
-  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
+resource "null_resource" "archive_deployments_api_lambda" {
+  depends_on = [null_resource.clean_lambda_pycache]
+
+  triggers = {
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/deployments_api", "**") : filesha1("${path.module}/../lambda/deployments_api/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/deployments_api ${local.deployments_api_lambda_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
 }
 
-resource "aws_lambda_function" "manage" {
-  filename      = data.archive_file.manage_lambda.output_path
-  function_name = "${var.project_name}-manage"
+resource "null_resource" "archive_service_lambda" {
+  depends_on = [null_resource.clean_lambda_pycache]
+
+  triggers = {
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/service", "**") : filesha1("${path.module}/../lambda/service/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/service ${local.service_lambda_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
+}
+
+resource "aws_lambda_function" "deployments_api" {
+  depends_on    = [null_resource.archive_deployments_api_lambda]
+  filename      = local.deployments_api_lambda_zip_path
+  function_name = "${var.project_name}-deployments-api"
   role          = aws_iam_role.lambda.arn
   handler       = "handler.handler"
   runtime       = "python3.11"
   timeout       = 30
 
-  source_code_hash = data.archive_file.manage_lambda.output_base64sha256
+  layers = [
+    aws_lambda_layer_version.common_libs_layer.arn,
+    aws_lambda_layer_version.github_utils_layer.arn
+  ]
+
+  source_code_hash = try(filebase64sha256(local.deployments_api_lambda_zip_path), null)
 
   environment {
     variables = {
@@ -262,72 +319,108 @@ resource "aws_lambda_function" "manage" {
 }
 
 resource "aws_lambda_function" "service" {
-  filename      = data.archive_file.service_lambda.output_path
+  depends_on    = [null_resource.archive_service_lambda]
+  filename      = local.service_lambda_zip_path
   function_name = "${var.project_name}-service"
   role          = aws_iam_role.lambda.arn
   handler       = "handler.handler"
   runtime       = "python3.11"
   timeout       = 20
 
-  source_code_hash = data.archive_file.service_lambda.output_base64sha256
+  layers = [
+    aws_lambda_layer_version.common_libs_layer.arn,
+    aws_lambda_layer_version.github_utils_layer.arn
+  ]
+
+  source_code_hash = try(filebase64sha256(local.service_lambda_zip_path), null)
 
   environment {
     variables = {
-      SERVICES_TABLE = aws_dynamodb_table.services.name
+      SERVICES_TABLE    = aws_dynamodb_table.services.name
+      DEPLOYMENTS_TABLE = aws_dynamodb_table.deployments.name
+      FRONTEND_URL      = "https://${var.domain_name}"
     }
   }
 }
 
 # ECS Deployer Lambda
-data "archive_file" "ecs_deployer_lambda" {
-  depends_on  = [null_resource.clean_lambda_pycache]
-  type        = "zip"
-  source_dir  = "${path.module}/../lambda/ecs_deployer"
-  output_path = "${path.module}/.terraform/lambda-ecs-deployer.zip"
-  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
+locals {
+  ecs_deployer_lambda_zip_path = "${path.module}/../build/ecs_deployer.zip"
+}
+
+resource "null_resource" "archive_ecs_deployer_lambda" {
+  depends_on = [null_resource.clean_lambda_pycache]
+
+  triggers = {
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/ecs_deployer", "**") : filesha1("${path.module}/../lambda/ecs_deployer/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/ecs_deployer ${local.ecs_deployer_lambda_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
 }
 
 resource "aws_lambda_function" "ecs_deployer" {
-  filename      = data.archive_file.ecs_deployer_lambda.output_path
+  depends_on    = [null_resource.archive_ecs_deployer_lambda]
+  filename      = local.ecs_deployer_lambda_zip_path
   function_name = "${var.project_name}-ecs-deployer"
   role          = aws_iam_role.lambda.arn
   handler       = "handler.handler"
   runtime       = "python3.11"
   timeout       = 300
 
-  source_code_hash = data.archive_file.ecs_deployer_lambda.output_base64sha256
+  layers = [
+    # 외부 라이브러리 (requests 등)
+    aws_lambda_layer_version.common_libs_layer.arn,
+    aws_lambda_layer_version.github_utils_layer.arn
+  ]
+
+  source_code_hash = try(filebase64sha256(local.ecs_deployer_lambda_zip_path), null)
 
   environment {
     variables = {
       CLUSTER_NAME        = aws_ecs_cluster.main.name
       DEPLOYMENTS_TABLE   = aws_dynamodb_table.deployments.name
+      SERVICES_TABLE      = aws_dynamodb_table.services.name
       USERS_TABLE         = aws_dynamodb_table.users.name
       TASK_EXECUTION_ROLE = aws_iam_role.ecs_task_execution.arn
       TASK_ROLE           = aws_iam_role.ecs_task.arn
       TARGET_GROUP_ARN    = aws_lb_target_group.default.arn
       ECR_REPOSITORY_URL  = aws_ecr_repository.app_repo.repository_url
+      FRONTEND_URL        = "https://${var.domain_name}"
     }
   }
 }
 
 # Logs API Lambda
-data "archive_file" "logs_api_lambda" {
-  depends_on  = [null_resource.clean_lambda_pycache]
-  type        = "zip"
-  source_dir  = "${path.module}/../lambda/logs_api"
-  output_path = "${path.module}/.terraform/lambda-logs-api.zip"
-  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
+locals {
+  logs_api_lambda_zip_path = "${path.module}/../build/logs_api.zip"
+}
+
+resource "null_resource" "archive_logs_api_lambda" {
+  depends_on = [null_resource.clean_lambda_pycache]
+
+  triggers = {
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/logs_api", "**") : filesha1("${path.module}/../lambda/logs_api/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/logs_api ${local.logs_api_lambda_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
 }
 
 resource "aws_lambda_function" "logs_api" {
-  filename      = data.archive_file.logs_api_lambda.output_path
+  depends_on    = [null_resource.archive_logs_api_lambda]
+  filename      = local.logs_api_lambda_zip_path
   function_name = "${var.project_name}-logs-api"
   role          = aws_iam_role.lambda.arn
   handler       = "handler.handler"
   runtime       = "python3.11"
   timeout       = 30
 
-  source_code_hash = data.archive_file.logs_api_lambda.output_base64sha256
+  source_code_hash = try(filebase64sha256(local.logs_api_lambda_zip_path), null)
 
   environment {
     variables = {
@@ -339,16 +432,26 @@ resource "aws_lambda_function" "logs_api" {
 
 # --- Repo Inspector Lambda ---
 
-data "archive_file" "repo_inspector_lambda" {
-  depends_on  = [null_resource.clean_lambda_pycache]
-  type        = "zip"
-  source_dir  = "${path.module}/../lambda/repo_inspector"
-  output_path = "${path.module}/.terraform/lambda-repo-inspector.zip"
-  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info"]
+locals {
+  repo_inspector_lambda_zip_path = "${path.module}/../build/repo_inspector.zip"
+}
+
+resource "null_resource" "archive_repo_inspector_lambda" {
+  depends_on = [null_resource.clean_lambda_pycache]
+
+  triggers = {
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/repo_inspector", "**") : filesha1("${path.module}/../lambda/repo_inspector/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/repo_inspector ${local.repo_inspector_lambda_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
 }
 
 resource "aws_lambda_function" "repo_inspector" {
-  filename      = data.archive_file.repo_inspector_lambda.output_path
+  depends_on    = [null_resource.archive_repo_inspector_lambda]
+  filename      = local.repo_inspector_lambda_zip_path
   function_name = "${var.project_name}-repo-inspector"
   role          = aws_iam_role.lambda.arn
   handler       = "handler.handler"
@@ -360,7 +463,7 @@ resource "aws_lambda_function" "repo_inspector" {
     aws_lambda_layer_version.github_utils_layer.arn
   ]
 
-  source_code_hash = data.archive_file.repo_inspector_lambda.output_base64sha256
+  source_code_hash = try(filebase64sha256(local.repo_inspector_lambda_zip_path), null)
 
   environment {
     variables = {

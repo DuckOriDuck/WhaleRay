@@ -11,8 +11,7 @@ resource "aws_cloudwatch_event_rule" "codebuild_state_change" {
       project-name = [
         aws_codebuild_project.spring_boot.name,
         aws_codebuild_project.nodejs.name,
-        aws_codebuild_project.nextjs.name,
-        aws_codebuild_project.python.name
+        aws_codebuild_project.nextjs.name
       ]
     }
   })

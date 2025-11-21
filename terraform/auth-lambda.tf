@@ -138,20 +138,30 @@ EOT
 }
 
 # Lambda 패키징
-data "archive_file" "auth_lambda" {
+locals {
+  auth_lambda_zip_path = "${path.module}/../build/auth.zip"
+}
+
+resource "null_resource" "archive_auth_lambda" {
   depends_on = [
     null_resource.clean_lambda_pycache,
     null_resource.auth_lambda_dependencies
   ]
-  type        = "zip"
-  source_dir  = "${path.module}/../build/auth_package"
-  output_path = "${path.module}/../build/auth.zip"
-  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "*.egg-info", "tests"]
+
+  triggers = {
+    requirements_sha = filesha256("${path.module}/../lambda/auth/requirements.txt")
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../build/auth_package ${local.auth_lambda_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
 }
 
 # GitHub OAuth Authorize Lambda
 resource "aws_lambda_function" "auth_github_authorize" {
-  filename      = data.archive_file.auth_lambda.output_path
+  depends_on    = [null_resource.archive_auth_lambda]
+  filename      = local.auth_lambda_zip_path
   function_name = "${var.project_name}-auth-github-authorize"
   role          = aws_iam_role.lambda_auth.arn
   handler       = "authorize.handler"
@@ -168,7 +178,7 @@ resource "aws_lambda_function" "auth_github_authorize" {
     }
   }
 
-  source_code_hash = data.archive_file.auth_lambda.output_base64sha256
+  source_code_hash = try(filebase64sha256(local.auth_lambda_zip_path), null)
 
   tags = {
     Name = "${var.project_name}-auth-github-authorize"
@@ -177,7 +187,8 @@ resource "aws_lambda_function" "auth_github_authorize" {
 
 # GitHub OAuth Callback Lambda
 resource "aws_lambda_function" "auth_github_callback" {
-  filename      = data.archive_file.auth_lambda.output_path
+  depends_on    = [null_resource.archive_auth_lambda]
+  filename      = local.auth_lambda_zip_path
   function_name = "${var.project_name}-auth-github-callback"
   role          = aws_iam_role.lambda_auth.arn
   handler       = "callback.handler"
@@ -199,7 +210,7 @@ resource "aws_lambda_function" "auth_github_callback" {
     }
   }
 
-  source_code_hash = data.archive_file.auth_lambda.output_base64sha256
+  source_code_hash = try(filebase64sha256(local.auth_lambda_zip_path), null)
 
   tags = {
     Name = "${var.project_name}-auth-github-callback"
@@ -207,7 +218,8 @@ resource "aws_lambda_function" "auth_github_callback" {
 }
 
 resource "aws_lambda_function" "auth_github_install_status" {
-  filename      = data.archive_file.auth_lambda.output_path
+  depends_on    = [null_resource.archive_auth_lambda]
+  filename      = local.auth_lambda_zip_path
   function_name = "${var.project_name}-auth-github-install-status"
   role          = aws_iam_role.lambda_auth.arn
   handler       = "installation.check_installation"
@@ -223,7 +235,7 @@ resource "aws_lambda_function" "auth_github_install_status" {
     }
   }
 
-  source_code_hash = data.archive_file.auth_lambda.output_base64sha256
+  source_code_hash = try(filebase64sha256(local.auth_lambda_zip_path), null)
 
   tags = {
     Name = "${var.project_name}-auth-github-install-status"
@@ -231,7 +243,8 @@ resource "aws_lambda_function" "auth_github_install_status" {
 }
 
 resource "aws_lambda_function" "auth_github_install_redirect" {
-  filename      = data.archive_file.auth_lambda.output_path
+  depends_on    = [null_resource.archive_auth_lambda]
+  filename      = local.auth_lambda_zip_path
   function_name = "${var.project_name}-auth-github-install-redirect"
   role          = aws_iam_role.lambda_auth.arn
   handler       = "installation.redirect_to_install"
@@ -244,7 +257,7 @@ resource "aws_lambda_function" "auth_github_install_redirect" {
     }
   }
 
-  source_code_hash = data.archive_file.auth_lambda.output_base64sha256
+  source_code_hash = try(filebase64sha256(local.auth_lambda_zip_path), null)
 
   tags = {
     Name = "${var.project_name}-auth-github-install-redirect"
@@ -253,7 +266,8 @@ resource "aws_lambda_function" "auth_github_install_redirect" {
 
 # Lambda Authorizer (JWT 검증)
 resource "aws_lambda_function" "auth_verify" {
-  filename      = data.archive_file.auth_lambda.output_path
+  depends_on    = [null_resource.archive_auth_lambda]
+  filename      = local.auth_lambda_zip_path
   function_name = "${var.project_name}-auth-verify"
   role          = aws_iam_role.lambda_auth.arn
   handler       = "verify.handler"
@@ -266,7 +280,7 @@ resource "aws_lambda_function" "auth_verify" {
     }
   }
 
-  source_code_hash = data.archive_file.auth_lambda.output_base64sha256
+  source_code_hash = try(filebase64sha256(local.auth_lambda_zip_path), null)
 
   tags = {
     Name = "${var.project_name}-auth-verify"
@@ -316,7 +330,8 @@ resource "aws_lambda_permission" "auth_verify_apigw" {
 
 # GET /me Lambda
 resource "aws_lambda_function" "auth_me" {
-  filename      = data.archive_file.auth_lambda.output_path
+  depends_on    = [null_resource.archive_auth_lambda]
+  filename      = local.auth_lambda_zip_path
   function_name = "${var.project_name}-auth-me"
   role          = aws_iam_role.lambda_auth.arn
   handler       = "me.handler"
@@ -330,7 +345,7 @@ resource "aws_lambda_function" "auth_me" {
     }
   }
 
-  source_code_hash = data.archive_file.auth_lambda.output_base64sha256
+  source_code_hash = try(filebase64sha256(local.auth_lambda_zip_path), null)
 
   tags = {
     Name = "${var.project_name}-auth-me"
@@ -347,7 +362,8 @@ resource "aws_lambda_permission" "auth_me_apigw" {
 
 # GET /github/repositories Lambda
 resource "aws_lambda_function" "github_repositories" {
-  filename      = data.archive_file.auth_lambda.output_path
+  depends_on    = [null_resource.archive_auth_lambda]
+  filename      = local.auth_lambda_zip_path
   function_name = "${var.project_name}-github-repositories"
   role          = aws_iam_role.lambda_auth.arn
   handler       = "repositories.handler"
@@ -369,7 +385,7 @@ resource "aws_lambda_function" "github_repositories" {
     }
   }
 
-  source_code_hash = data.archive_file.auth_lambda.output_base64sha256
+  source_code_hash = try(filebase64sha256(local.auth_lambda_zip_path), null)
 
   tags = {
     Name = "${var.project_name}-github-repositories"

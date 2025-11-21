@@ -4,21 +4,28 @@ import boto3
 import time
 
 ecs = boto3.client('ecs')
+# Lambda Layer에서 공통 유틸리티 함수 가져오기
+from github_utils import update_deployment_status
+
 dynamodb = boto3.resource('dynamodb')
 
 CLUSTER_NAME = os.environ['CLUSTER_NAME']
 DEPLOYMENTS_TABLE = os.environ['DEPLOYMENTS_TABLE']
+SERVICES_TABLE = os.environ['SERVICES_TABLE']
 TASK_EXECUTION_ROLE = os.environ['TASK_EXECUTION_ROLE']
 TASK_ROLE = os.environ['TASK_ROLE']
 TARGET_GROUP_ARN = os.environ['TARGET_GROUP_ARN']
+FRONTEND_URL = os.environ['FRONTEND_URL']
 
 deployments_table = dynamodb.Table(DEPLOYMENTS_TABLE)
+services_table = dynamodb.Table(SERVICES_TABLE)
 
 
 def handler(event, context):
     """
     CodeBuild 빌드 완료 이벤트를 받아서 ECS로 배포하는 Lambda 함수
     """
+    print("invoked!")
     print(f"Received event: {json.dumps(event)}")
 
     try:
@@ -54,28 +61,27 @@ def handler(event, context):
 
         # 빌드 실패 처리
         if build_status == 'FAILED':
-            deployments_table.update_item(
-                Key={'deploymentId': deployment_id},
-                UpdateExpression='SET #status = :status, updatedAt = :updatedAt',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':status': 'BUILD_FAILED',
-                    ':updatedAt': int(time.time())
-                }
+            update_deployment_status(
+                DEPLOYMENTS_TABLE,
+                deployment_id,
+                'BUILDING_FAIL'
             )
+            print(f"Deployment {deployment_id} status updated to BUILD_FAILED.")
             return {'statusCode': 200, 'body': 'Build failed, deployment aborted'}
 
         # 빌드 성공 - ECS 배포 시작
-        service_name = deployment.get('serviceName')
-        user_id = deployment.get('userId')
+        service_name = deployment['serviceName'] # 이제 deployments 테이블에 serviceName이 항상 존재합니다.
+        service_id = deployment['serviceId'] # 배포 정보에서 serviceId를 직접 가져옵니다.
         port = deployment.get('port', 3000)
 
-        if not ecr_image_uri:
-            # ECR 이미지 URI 구성
-            ecr_repo_url = os.environ['ECR_REPOSITORY_URL']
-            ecr_image_uri = f"{ecr_repo_url}:{deployment_id}"
+        # 실제 배포 시작 전 상태를 DEPLOYING으로 변경
+        update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'DEPLOYING')
 
-        # ECS Task Definition 생성
+        print("Build Succeeded! Starting deployment process...")
+        print(f"Deployment ID: {deployment_id}")
+        print(f"Image to deploy: {ecr_image_uri}")
+
+        # ECS Task Definition 생성 : 쉬운 로그 풀링을 위해
         task_def_name = f"whaleray-{service_name}-{deployment_id[:8]}"
 
         task_definition = ecs.register_task_definition(
@@ -99,9 +105,10 @@ def handler(event, context):
                     'logConfiguration': {
                         'logDriver': 'awslogs',
                         'options': {
-                            'awslogs-group': f'/ecs/{task_def_name}',
+                            # 로그 그룹을 중앙화하고, 스트림 접두사로 로그를 격리합니다.
+                            'awslogs-group': f'/ecs/{CLUSTER_NAME}',
                             'awslogs-region': os.environ['AWS_REGION'],
-                            'awslogs-stream-prefix': 'ecs',
+                            'awslogs-stream-prefix': deployment_id,
                             'awslogs-create-group': 'true'
                         }
                     }
@@ -110,9 +117,6 @@ def handler(event, context):
         )
 
         task_def_arn = task_definition['taskDefinition']['taskDefinitionArn']
-
-        # 서비스 ID 구성
-        service_id = f"{user_id}-{service_name}"
 
         # ECS Service 생성 또는 업데이트
         try:
@@ -151,18 +155,17 @@ def handler(event, context):
             action = 'created'
 
         # Deployments 테이블 업데이트
-        deployments_table.update_item(
-            Key={'deploymentId': deployment_id},
-            UpdateExpression='SET #status = :status, ecsService = :ecsService, ecsLogGroup = :ecsLogGroup, taskDefinitionArn = :taskDefArn, updatedAt = :updatedAt',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={
-                ':status': 'RUNNING',
-                ':ecsService': service_id,
-                ':ecsLogGroup': f'/ecs/{task_def_name}',
-                ':taskDefArn': task_def_arn,
-                ':updatedAt': int(time.time())
-            }
+        update_deployment_status(
+            DEPLOYMENTS_TABLE,
+            deployment_id,
+            'RUNNING',
+            ecsService=service_id,
+            ecsLogGroup=f'/ecs/{CLUSTER_NAME}',
+            taskDefinitionArn=task_def_arn
         )
+
+        # 이전 RUNNING 상태의 배포를 SUPERSEDED로 변경
+        supersede_previous_deployment(deployment, service_id)
 
         print(f"Service {action}: {service_id}")
 
@@ -182,18 +185,58 @@ def handler(event, context):
 
         # 배포 실패 기록
         if 'deployment_id' in locals():
-            deployments_table.update_item(
-                Key={'deploymentId': deployment_id},
-                UpdateExpression='SET #status = :status, errorMessage = :error, updatedAt = :updatedAt',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':status': 'DEPLOY_FAILED',
-                    ':error': str(e),
-                    ':updatedAt': int(time.time())
-                }
+            update_deployment_status(
+                DEPLOYMENTS_TABLE,
+                deployment_id,
+                'DEPLOYING_FAIL'
             )
 
         return {
             'statusCode': 500,
             'body': json.dumps({'error': str(e)})
         }
+
+
+def supersede_previous_deployment(current_deployment: dict, service_id: str):
+    """
+    services 테이블을 사용하여 이전 활성 배포를 SUPERSEDED로 만들고,
+    새로운 배포 ID로 activeDeploymentId를 업데이트
+    """
+    print(f"Superseding previous deployment for service '{service_id}'...")
+    try:
+        current_deployment_id = current_deployment['deploymentId']
+        user_id = current_deployment['userId']
+        # 서비스별 고유 URL 생성 (예: https://whaleray.oriduck.com/service/github_12345_my-repo)
+        service_url = f"{FRONTEND_URL}/service/{service_id}"
+
+        # 1. services 테이블에서 이전 activeDeploymentId를 가져옵니다.
+        service_response = services_table.get_item(Key={'serviceId': service_id})
+        old_active_deployment_id = service_response.get('Item', {}).get('activeDeploymentId')
+
+        # 2. 이전 배포가 존재하면 SUPERSEDED로 상태를 변경합니다.
+        if old_active_deployment_id and old_active_deployment_id != current_deployment_id:
+            print(
+                f"Found previous active deployment {old_active_deployment_id}, updating to SUPERSEDED."
+            )
+            update_deployment_status(
+                DEPLOYMENTS_TABLE,
+                old_active_deployment_id,
+                'SUPERSEDED'
+            )
+
+        # 3. services 테이블의 activeDeploymentId를 현재 배포 ID로 업데이트합니다.
+        services_table.update_item(
+            Key={'serviceId': service_id},
+            UpdateExpression='SET activeDeploymentId = :did, userId = :uid, #url = :url',
+            ExpressionAttributeNames={'#url': 'url'},
+            ExpressionAttributeValues={
+                ':did': current_deployment_id,
+                ':uid': user_id,
+                ':url': service_url
+            }
+        )
+        print(f"Service {service_id} active deployment updated to {current_deployment_id}.")
+
+    except Exception as e:
+        # 이 로직은 메인 배포 흐름에 영향을 주지 않도록 오류를 로깅만 합니다.
+        print(f"Warning: Failed to supersede previous deployments. Error: {str(e)}")
