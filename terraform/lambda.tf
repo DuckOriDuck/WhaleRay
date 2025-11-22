@@ -617,4 +617,3 @@ resource "aws_lambda_function" "database" {
 locals {
   db_event_listener_zip_path = "${path.module}/../build/database_event_listener.zip"
 }
-}

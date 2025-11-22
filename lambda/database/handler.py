@@ -307,6 +307,7 @@ def create_database(user_id):
                     # 'filesystemType': 'ext4' # Default
                 }
             }]
+
         )
         
         # Update DynamoDB
@@ -325,8 +326,10 @@ def create_database(user_id):
         # Rollback
         table.delete_item(Key={'databaseId': database_id})
         ssm.delete_parameter(Name=ssm_param_name)
+
         if volume_id: ec2.delete_volume(VolumeId=volume_id)
         # Clean up Cloud Map?
+
         return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to start database service'})}
 
     return {
@@ -388,6 +391,7 @@ def delete_database(user_id):
     table.delete_item(Key={'databaseId': database_id})
 
     # 6. Delete EBS Volume (if recorded)
+
     # Note: ECS Service deletion might detach it, but we need to delete it explicitly
     # unless we set deleteOnTermination (which we didn't/couldn't easily for dynamic volumes)
     if 'volumeId' in db_item:
@@ -410,6 +414,7 @@ def delete_database(user_id):
                         time.sleep(5)
                     else:
                         raise e
+
         except ClientError as e:
             print(f"Error deleting volume: {e}")
 
