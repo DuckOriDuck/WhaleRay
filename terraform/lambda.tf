@@ -233,6 +233,27 @@ resource "aws_iam_role_policy" "lambda" {
   })
 }
 
+resource "aws_iam_policy" "pass_ecs_infra_role" {
+  name        = "${var.project_name}-pass-ecs-infra-role-policy"
+  description = "Allows passing the ECS Infra Role to ECS"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = "iam:PassRole"
+        Effect   = "Allow"
+        Resource = aws_iam_role.ecs_infra_role.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_pass_ecs_infra_role" {
+  role       = aws_iam_role.lambda.name
+  policy_arn = aws_iam_policy.pass_ecs_infra_role.arn
+}
+
 # --- Lambda Layers ---
 
 # PyJWT, cryptography, requests 등 외부 라이브러리를 포함하는 공통 레이어
@@ -626,10 +647,11 @@ resource "aws_lambda_function" "database" {
       CLUSTER_NAME        = aws_ecs_cluster.main.name
       TASK_DEFINITION_ARN = aws_ecs_task_definition.database.arn
       SUBNETS             = join(",", aws_subnet.private[*].id)
-      SECURITY_GROUPS     = aws_security_group.ecs_tasks.id
+      SECURITY_GROUPS     = aws_security_group.fargate_tasks.id # 올바른 보안 그룹으로 변경
       NAMESPACE_ID        = aws_service_discovery_private_dns_namespace.whaleray.id
+      DB_SERVICE_ARN      = aws_service_discovery_service.db_services.arn
       DOMAIN_NAME         = var.domain_name
-      ECS_TASK_ROLE_ARN   = aws_iam_role.ecs_task.arn
+      ECS_INFRA_ROLE_ARN  = aws_iam_role.ecs_infra_role.arn # Task Role 대신 Infra Role 전달
     }
   }
 }

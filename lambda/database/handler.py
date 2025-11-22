@@ -20,8 +20,12 @@ SUBNETS = os.environ['SUBNETS'].split(',')
 SECURITY_GROUPS = [os.environ['SECURITY_GROUPS']]
 NAMESPACE_ID = os.environ['NAMESPACE_ID']
 DB_SERVICE_ARN = os.environ['DB_SERVICE_ARN']
-
 DOMAIN_NAME = os.environ['DOMAIN_NAME']
+ECS_INFRA_ROLE_ARN = os.environ['ECS_INFRA_ROLE_ARN']
+
+PROJECT_NAME = CLUSTER_NAME.replace('-cluster', '')
+AWS_REGION = os.environ.get('AWS_REGION', boto3.Session().region_name)
+LOG_GROUP_NAME = f"/ecs/{PROJECT_NAME}-database"
 
 table = dynamodb.Table(DATABASE_TABLE)
 
@@ -104,8 +108,8 @@ def get_database(user_id):
         
         return {
             'databaseId': db['databaseId'],
-            'dbInternalEndpoint': db.get('dbInternalEndpoint', f"db-{db['databaseId']}.whaleray.local"),
-            'dbExternalEndpoint': db.get('dbExternalEndpoint', f"db.{DOMAIN_NAME}/{db['databaseId']}"),
+            'dbInternalEndpoint': db.get('dbInternalEndpoint', f"db-{db['databaseId']}.db.whaleray.local"),
+            'dbExternalEndpoint': db.get('dbExternalEndpoint', f"https://db.whaleray.oriduckduck.site/{db['databaseId']}/pgadmin/"), # pgAdmin 접속 경로 예시
             'dbState': current_state,
             'username': db['username'],
             'createdAt': int(db['createdAt'])
@@ -116,30 +120,39 @@ def get_database(user_id):
         raise
 
 def create_database(user_id):
-    # 1. Check Limit
+    print("Starting database creation process...")
+    # 1. 사용자당 데이터베이스 수 제한 확인 (1개)
+    print("Step 1: Checking for existing database for the user.")
     existing_db = get_database(user_id)
     if existing_db:
+        print("Step 1 FAILED: Database already exists for this user.")
         return {
             'statusCode': 409,
             'body': json.dumps({'message': 'Database already exists for this user'})
         }
+    print("Step 1 PASSED: No existing database found.")
 
+    # 2. 데이터베이스 ID 및 자격 증명 생성
+    print("Step 2: Generating new database ID and credentials.")
     database_id = str(uuid.uuid4())
     username = f"user_{database_id[:8]}"
     password = generate_password()
-    print(f"Generated password for {username}")
+    print(f"Step 2 PASSED: Generated credentials for username '{username}'.")
     
-    # 1.5. Select Subnet and AZ
-    # We need to pick a subnet for the task
+    # 3. 서브넷 및 가용 영역 선택
+    print("Step 3: Selecting subnet and Availability Zone.")
     selected_subnet_id = SUBNETS[0] # Simple selection for now
     try:
         subnet_info = ec2.describe_subnets(SubnetIds=[selected_subnet_id])['Subnets'][0]
         availability_zone = subnet_info['AvailabilityZone']
+        print(f"Step 3 PASSED: Selected subnet {selected_subnet_id} in AZ {availability_zone}.")
     except ClientError as e:
         print(f"Error describing subnet: {e}")
+        print(f"Step 3 FAILED: Could not determine Availability Zone.")
         return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to determine availability zone'})}
 
-    # 2. Save Credentials to SSM
+    # 4. SSM 파라미터 스토어에 암호 저장
+    print("Step 4: Saving generated password to SSM Parameter Store.")
     ssm_param_name = f"/whaleray/db/{database_id}/password"
     try:
         ssm.put_parameter(
@@ -148,13 +161,15 @@ def create_database(user_id):
             Type='SecureString',
             Overwrite=True
         )
-        print(f"Saved password to SSM: {ssm_param_name}")
+        print(f"Step 4 PASSED: Saved password to SSM parameter '{ssm_param_name}'.")
     except ClientError as e:
         print(f"Error saving to SSM: {e}")
+        print(f"Step 4 FAILED: Could not save password to SSM.")
         return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to generate credentials'})}
 
-    # 3. Save Metadata to DynamoDB
+    # 5. DynamoDB에 메타데이터 저장
     timestamp = int(time.time())
+    print(f"Step 5: Saving initial metadata to DynamoDB for databaseId '{database_id}'.")
     item = {
         'databaseId': database_id,
         'userId': user_id,
@@ -166,8 +181,10 @@ def create_database(user_id):
         'createdAt': timestamp
     }
     table.put_item(Item=item)
+    print("Step 5 PASSED: Metadata saved to DynamoDB.")
 
-    # 5. Register Task Definition
+    # 6. ECS 작업 정의 등록
+    print("Step 6: Registering a new ECS Task Definition.")
     try:
         # Get base TD
         base_td = ecs.describe_task_definition(taskDefinition=TASK_DEFINITION_ARN)['taskDefinition']
@@ -178,28 +195,67 @@ def create_database(user_id):
             if container['name'] == 'postgres':
                 # Remove existing envs if any to avoid dupes, or just append/overwrite
                 # Simpler: Just filter out old ones and add new ones
-                new_env = [e for e in container.get('environment', []) if e['name'] not in ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB']]
+                # [FIX] Set PGDATA to a directory that the entrypoint can create.
+                new_env = [e for e in container.get('environment', []) if e['name'] not in ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB', 'PGDATA']]
                 new_env.extend([
                     {'name': 'POSTGRES_USER', 'value': username},
                     {'name': 'POSTGRES_PASSWORD', 'value': password},
-                    {'name': 'POSTGRES_DB', 'value': 'whaleray'}
+                    {'name': 'POSTGRES_DB', 'value': 'whaleray'},
+                    {'name': 'PGDATA', 'value': '/var/lib/postgresql/data'}
                 ])
                 container['environment'] = new_env
                 
                 # Add Mount Point
+                # [FIX] Mount one level up, so the entrypoint can create the data directory.
                 container['mountPoints'] = [{
                     'sourceVolume': 'db-storage',
-                    'containerPath': '/var/lib/postgresql/data',
+                    'containerPath': '/var/lib/postgresql',
                     'readOnly': False
                 }]
+
+                # [FIX] Update health check to use the correct username
+                container['healthCheck'] = {
+                    'command': ["CMD-SHELL", f"pg_isready -U {username} -d whaleray"],
+                    'interval': 30,
+                    'timeout': 5,
+                    'retries': 3,
+                    'startPeriod': 60
+                }
+
+                # [FIX] Forcefully add logConfiguration
+                container['logConfiguration'] = {
+                    'logDriver': 'awslogs',
+                    'options': {
+                        'awslogs-group': LOG_GROUP_NAME,
+                        'awslogs-region': AWS_REGION,
+                        'awslogs-stream-prefix': 'postgres',
+                        'awslogs-create-group': 'true'
+                    }
+                }
+
                 
             elif container['name'] == 'pgadmin':
-                new_env = [e for e in container.get('environment', []) if e['name'] not in ['PGADMIN_DEFAULT_EMAIL', 'PGADMIN_DEFAULT_PASSWORD']]
+                # [FIX] pgadmin v8+ no longer supports PGADMIN_DEFAULT_PASSWORD.
+                # Use PGADMIN_SETUP_EMAIL and PGADMIN_SETUP_PASSWORD instead.
+                # The password will be logged to container logs on first run.
+                # [FIX] Use a valid email domain to pass validation.
+                new_env = [e for e in container.get('environment', []) if e['name'] not in ['PGADMIN_DEFAULT_EMAIL', 'PGADMIN_DEFAULT_PASSWORD', 'PGADMIN_SETUP_EMAIL', 'PGADMIN_SETUP_PASSWORD', 'PGADMIN_CONFIG_ALLOW_SPECIAL_EMAIL_DOMAINS']]
                 new_env.extend([
-                    {'name': 'PGADMIN_DEFAULT_EMAIL', 'value': f"{username}@whaleray.local"},
-                    {'name': 'PGADMIN_DEFAULT_PASSWORD', 'value': password}
+                    {'name': 'PGADMIN_DEFAULT_EMAIL', 'value': f"{username}@whaleray.com"},
+                    {'name': 'PGADMIN_DEFAULT_PASSWORD', 'value': password},
                 ])
                 container['environment'] = new_env
+
+                # [FIX] Forcefully add logConfiguration
+                container['logConfiguration'] = {
+                    'logDriver': 'awslogs',
+                    'options': {
+                        'awslogs-group': LOG_GROUP_NAME,
+                        'awslogs-region': AWS_REGION,
+                        'awslogs-stream-prefix': 'pgadmin',
+                        'awslogs-create-group': 'true'
+                    }
+                }
         
         # Register new TD
         # Add Volume Definition for EBS
@@ -223,35 +279,18 @@ def create_database(user_id):
             memory=base_td['memory']
         )
         new_td_arn = new_td_resp['taskDefinition']['taskDefinitionArn']
+        print(f"Step 6 PASSED: Registered new task definition '{new_td_arn}'.")
         
     except ClientError as e:
         print(f"Error registering TD: {e}")
+        print("Step 6 FAILED: Could not register task definition. Rolling back...")
         # Rollback
         ssm.delete_parameter(Name=ssm_param_name)
         table.delete_item(Key={'databaseId': database_id})
         return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to register task definition'})}
 
-    # 6. Create Cloud Map Service
-    try:
-        sd_response = servicediscovery.create_service(
-            Name=f"db-{database_id}",
-            NamespaceId=os.environ['NAMESPACE_ID'],
-            DnsConfig={
-                'DnsRecords': [{'Type': 'A', 'TTL': 10}],
-                'RoutingPolicy': 'MULTIVALUE'
-            },
-            HealthCheckCustomConfig={'FailureThreshold': 1}
-        )
-        service_registry_arn = sd_response['Service']['Arn']
-        service_registry_id = sd_response['Service']['Id']
-    except ClientError as e:
-        print(f"Error creating Cloud Map service: {e}")
-        # Rollback
-        ssm.delete_parameter(Name=ssm_param_name)
-        table.delete_item(Key={'databaseId': database_id})
-        return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to create service discovery'})}
-
-    # 7. Create ECS Service
+    # 7. ECS 서비스 생성
+    print("Step 7: Creating ECS service to launch the database task.")
     try:
         ecs.create_service(
             cluster=CLUSTER_NAME,
@@ -263,11 +302,14 @@ def create_database(user_id):
                 'awsvpcConfiguration': {
                     'subnets': [selected_subnet_id], # Force specific subnet
                     'securityGroups': SECURITY_GROUPS,
-                    'assignPublicIp': 'ENABLED'
+                    'assignPublicIp': 'DISABLED'
                 }
             },
             serviceRegistries=[
-                {'registryArn': service_registry_arn}
+                {
+                    'registryArn': DB_SERVICE_ARN,  # Use shared 'db' service
+                    'containerName': 'postgres'  # Required for awsvpc network mode
+                }
             ],
             tags=[
                 {'key': 'databaseId', 'value': database_id},
@@ -278,7 +320,7 @@ def create_database(user_id):
             volumeConfigurations=[{
                 'name': 'db-storage',
                 'managedEBSVolume': {
-                    'roleArn': os.environ['ECS_TASK_ROLE_ARN'],
+                    'roleArn': ECS_INFRA_ROLE_ARN,
                     'volumeType': 'gp3',
                     'sizeInGiB': 1,
                     'encrypted': True,
@@ -287,27 +329,30 @@ def create_database(user_id):
             }]
 
         )
-        
-        # Update DynamoDB
+        print(f"Step 7 PASSED: ECS service 'db-{database_id}' creation initiated.")
+
+        # 8. DynamoDB에 서비스 정보 업데이트
         table.update_item(
             Key={'databaseId': database_id},
-            UpdateExpression="set serviceArn = :s, serviceRegistryId = :r, taskDefinitionArn = :t",
+            UpdateExpression="set serviceArn = :s, taskDefinitionArn = :t",
             ExpressionAttributeValues={
                 ':s': f"db-{database_id}",
-                ':r': service_registry_id,
                 ':t': new_td_arn
             }
         )
+        print("Step 8 PASSED: Updated DynamoDB item with service and task definition ARN.")
 
     except ClientError as e:
         print(f"Error creating service: {e}")
+        print("Step 7 FAILED: Could not create ECS service. Rolling back...")
         # Rollback
         table.delete_item(Key={'databaseId': database_id})
         ssm.delete_parameter(Name=ssm_param_name)
         # Clean up Cloud Map?
 
         return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to start database service'})}
-
+    
+    print("Database creation process completed successfully.")
     return {
         'statusCode': 201,
         'body': json.dumps({
@@ -316,8 +361,8 @@ def create_database(user_id):
             'username': username,
             'password': password,
             'endpoints': {
-                'internal': f"db-{database_id}.whaleray.local",
-                'external': f"db.{DOMAIN_NAME}/{database_id}"
+                'internal': f"db-{database_id}.db.whaleray.local",
+                'external': f"https://db.whaleray.oriduckduck.site/{database_id}/pgadmin/"
             }
         })
     }
@@ -343,12 +388,8 @@ def delete_database(user_id):
     except ClientError as e:
         print(f"Error deleting service: {e}")
 
-    # 2. Delete Cloud Map Service
-    if 'serviceRegistryId' in db_item:
-        try:
-            servicediscovery.delete_service(Id=db_item['serviceRegistryId'])
-        except ClientError as e:
-            print(f"Error deleting Cloud Map service: {e}")
+    # 2. Cloud Map Service - No need to delete (shared 'db' service)
+    # When ECS service is deleted, the instance is automatically deregistered from Cloud Map
 
     # 3. Deregister Task Definition
     if 'taskDefinitionArn' in db_item:

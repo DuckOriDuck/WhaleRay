@@ -26,6 +26,23 @@ resource "aws_security_group" "fargate_tasks" {
     security_groups = [aws_security_group.router.id]
   }
 
+  # Allow inbound from ALB for health checks and traffic
+  ingress {
+    description     = "Allow PostgreSQL traffic from ALB"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  ingress {
+    description     = "Allow pgAdmin traffic from ALB"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
   # Allow all outbound traffic
   egress {
     description = "Allow all outbound traffic"
@@ -61,6 +78,56 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
 # EC2-based ECS resources removed - Using Fargate only
 # ============================================
 
+# ============================================
+# Fargate EBS Infrastructure Role
+# ============================================
+# Fargate가 EBS 볼륨을 관리(생성, 연결, 태그)하는 데 사용하는 전용 역할입니다.
+resource "aws_iam_role" "ecs_infra_role" {
+  name = "${var.project_name}-ecs-infra-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ecs.amazonaws.com"
+      }
+    }]
+  })
+}
+
+# AWS에서 제공하는 Fargate EBS 관리용 관리형 정책 연결
+resource "aws_iam_role_policy_attachment" "ecs_infra_ebs" {
+  role       = aws_iam_role.ecs_infra_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRolePolicyForVolumes"
+}
+
+# [FIX] Fargate EBS 볼륨 생성을 위해 ecs-infra-role에 ec2:DescribeAvailabilityZones 권한 추가
+resource "aws_iam_role_policy" "ecs_infra_describe_az" {
+  name = "${var.project_name}-ecs-infra-describe-az"
+  role = aws_iam_role.ecs_infra_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeAvailabilityZones"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+# ============================================
+# Data source for current AWS account ID
+# ============================================
+#data "aws_caller_identity" "current" {}
+
+# ============================================
+# ECS Task Execution Role
+# ============================================
+
 resource "aws_iam_role" "ecs_task_execution" {
   name = "${var.project_name}-ecs-task-execution"
 
@@ -80,6 +147,28 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   role       = aws_iam_role.ecs_task_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
+
+# Task Execution Role에 로그 그룹 생성 권한 추가
+# (기존 관리형 정책에는 CreateLogStream만 있고 CreateLogGroup은 없음)
+resource "aws_iam_role_policy" "ecs_task_execution_custom" {
+  name = "${var.project_name}-ecs-task-execution-custom"
+  role = aws_iam_role.ecs_task_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream"]
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.project_name}-*:*"
+      }
+    ]
+  })
+}
+
+# ============================================
+# ECS Task Role
+# ============================================
 
 resource "aws_iam_role" "ecs_task" {
   name = "${var.project_name}-ecs-task"
@@ -185,6 +274,13 @@ resource "aws_ecs_task_definition" "database" {
           "awslogs-create-group"  = "true"
         }
       }
+      healthCheck = {
+        command     = ["CMD-SHELL", "pg_isready"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 60
+      }
       # Mount point for EBS volume (if attached)
       # mountPoints = [
       #   {
@@ -226,6 +322,13 @@ resource "aws_ecs_task_definition" "database" {
           "awslogs-stream-prefix" = "pgadmin"
           "awslogs-create-group"  = "true"
         }
+      }
+      healthCheck = {
+        command     = ["CMD-SHELL", "wget --spider -q http://localhost:80/misc/ping || exit 1"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 60
       }
     }
   ])

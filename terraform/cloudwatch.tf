@@ -9,6 +9,11 @@ resource "aws_cloudwatch_log_group" "ecs_services" {
   retention_in_days = 7
 }
 
+resource "aws_cloudwatch_log_group" "ecs_database" {
+  name              = "/ecs/${var.project_name}-database"
+  retention_in_days = 7
+}
+
 # CloudWatch Log Groups for Lambda Functions
 resource "aws_cloudwatch_log_group" "lambda_deploy" {
   name              = "/aws/lambda/${aws_lambda_function.deploy.function_name}"
