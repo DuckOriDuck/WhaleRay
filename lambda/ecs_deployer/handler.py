@@ -75,7 +75,7 @@ def handler(event, context):
         # 빌드 성공 - ECS 배포 시작
         service_name = deployment['serviceName'] # 이제 deployments 테이블에 serviceName이 항상 존재합니다.
         service_id = deployment['serviceId'] # 배포 정보에서 serviceId를 직접 가져옵니다.
-        port = deployment.get('port', 3000)
+        port = int(deployment.get('port', 3000))
 
         # 실제 배포 시작 전 상태를 DEPLOYING으로 변경
         update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'DEPLOYING')
