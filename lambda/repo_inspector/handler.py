@@ -86,7 +86,7 @@ def handler(event, context):
         if source_dir:
             env_vars.append({'name': 'SOURCE_DIR', 'value': source_dir, 'type': 'PLAINTEXT'})
             
-        codebuild.start_build(
+        build_response = codebuild.start_build(
             projectName=codebuild_project,
             sourceVersion=branch,  # 빌드할 브랜치 지정
             sourceLocationOverride=f"https://github.com/{repository_full_name}.git", # 동적으로 소스 저장소 위치 지정
@@ -99,15 +99,20 @@ def handler(event, context):
             },
             environmentVariablesOverride=env_vars
         )
-        print(f"Successfully started CodeBuild for deployment {deployment_id}")
+        
+        build_id = build_response['build']['id']
+        print(f"Successfully started CodeBuild for deployment {deployment_id}, build ID: {build_id}")
 
-        # 5. 배포 상태를 'BUILDING'으로 업데이트
+        # 5. 배포 상태를 'BUILDING'으로 업데이트 (CodeBuild 로그 정보 포함)
         print(f"Updating status to BUILDING for deployment {deployment_id}.")
         
         # Spring Boot 프로젝트일 때 포트 8080 설정
         extra_attrs = {
             'framework': framework,
-            'codebuild_project': codebuild_project
+            'codebuild_project': codebuild_project,
+            'codebuildLogGroup': f'/aws/codebuild/{codebuild_project}',
+            'codebuildLogStream': f'{deployment_id}/{build_id.split("/")[-1]}',
+            'buildId': build_id
         }
         
         if framework and framework.startswith('spring-boot'):
