@@ -123,6 +123,21 @@ resource "aws_iam_role_policy" "lambda" {
         ]
         Resource = "arn:aws:codebuild:*:*:project/${var.project_name}-*"
       },
+      # [ADDED] Permissions for SSM Parameter Store and KMS
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:PutParameter"
+        ]
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Encrypt"
+        ]
+        Resource = aws_kms_key.ssm_secure_string.arn
+      },
       # [ADDED] repo_inspector 람다를 호출할 수 있는 권한 추가
       {
         Effect   = "Allow"
@@ -477,6 +492,7 @@ resource "aws_lambda_function" "repo_inspector" {
       PROJECT_NAME               = var.project_name
       GITHUB_APP_PRIVATE_KEY_ARN = aws_secretsmanager_secret.github_app_private_key.arn
       GITHUB_APP_ID              = var.github_app_id
+      SSM_KMS_KEY_ARN            = aws_kms_key.ssm_secure_string.arn
     }
   }
 }

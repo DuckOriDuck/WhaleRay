@@ -47,6 +47,7 @@ def handler(event, context):
         body = json.loads(event['body'])
         repository_full_name = body.get('repositoryFullName')
         branch = body.get('branch', 'main')
+        env_file_content = body.get('envFileContent', '') # .env 파일 내용 추가
 
         if not repository_full_name:
             return _response(400, {'error': 'repositoryFullName is required'})
@@ -101,7 +102,8 @@ def handler(event, context):
             'createdAt': timestamp,
             'updatedAt': timestamp,
             'serviceName': service_name, # 생성된 서비스 이름을 페이로드에 추가
-            'serviceId': service_id      # GSI 및 서비스 식별을 위해 serviceId 추가
+            'serviceId': service_id,      # GSI 및 서비스 식별을 위해 serviceId 추가
+            'envFileContent': env_file_content # .env 파일 내용 추가
         }
 
         # repo_inspector 람다 비동기 호출
