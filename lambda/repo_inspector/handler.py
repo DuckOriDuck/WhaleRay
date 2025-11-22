@@ -97,14 +97,40 @@ def handler(event, context):
                 private_key_secret_arn=GITHUB_APP_PRIVATE_KEY_ARN
             )
 
-            # 3. 레포지토리 분석 (프레임워크 감지)
-            framework = detect_framework(repository_full_name, branch, installation_access_token)
+            # 3. 레포지토리 분석 - 새로운 향상된 분석 로직
+            print("Starting enhanced repository analysis...")
             
-            if not framework:
-                error_message = f"Could not detect a supported framework for repository {repository_full_name}."
-                print(error_message)
-                update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'INSPECTING_FAIL', framework=None, errorMessage=error_message)
-                continue
+            # 3.1. Spring Boot + Gradle 프로젝트 우선 분석
+            spring_analysis = analyze_spring_gradle_project(repository_full_name, branch, installation_access_token)
+            
+            if spring_analysis:
+                # Spring Boot 프로젝트 발견
+                framework = f"spring-boot:{spring_analysis['source_directory']}" if spring_analysis['source_directory'] != '.' else 'spring-boot'
+                source_dir = spring_analysis['source_directory']
+                build_context = spring_analysis['build_context']
+                dockerfile_path = spring_analysis.get('dockerfile_path')
+                gradle_wrapper = spring_analysis.get('gradle_wrapper', False)
+                
+                print(f"Enhanced analysis result: framework={framework}, source_dir={source_dir}, build_context={build_context}")
+                print(f"Dockerfile found: {dockerfile_path is not None}, Gradle wrapper: {gradle_wrapper}")
+            else:
+                # 기존 방식으로 폴백
+                print("Spring Boot analysis failed, falling back to original detection...")
+                framework = detect_framework(repository_full_name, branch, installation_access_token)
+                
+                if not framework:
+                    error_message = f"Could not detect a supported framework for repository {repository_full_name}."
+                    print(error_message)
+                    update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'INSPECTING_FAIL', framework=None, errorMessage=error_message)
+                    continue
+                
+                # 기존 방식의 환경변수 설정
+                source_dir = "."
+                if ':' in framework:
+                    source_dir = framework.split(':')[1]
+                build_context = source_dir
+                dockerfile_path = None
+                gradle_wrapper = False
 
             # 4. 프레임워크에 맞는 CodeBuild 프로젝트 선택
             codebuild_project = select_codebuild_project(framework)
@@ -114,18 +140,15 @@ def handler(event, context):
                 update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'INSPECTING_FAIL', framework=framework, errorMessage=error_message)
                 continue
 
-            # 5. CodeBuild 프로젝트 실행
-            # 서브디렉토리 정보 추출
-            source_dir = "."
-            if ':' in framework:
-                source_dir = framework.split(':')[1]
-                
+            # 5. CodeBuild 프로젝트 실행 - 향상된 환경변수 전달
             env_vars = [
                 {'name': 'DEPLOYMENT_ID', 'value': deployment_id, 'type': 'PLAINTEXT'},
                 {'name': 'ECR_IMAGE_URI', 'value': f"{ECR_REPOSITORY_URL}:{deployment_id}", 'type': 'PLAINTEXT'},
-                {'name': 'DOTENV_BLOB_SSM_PATH', 'value': env_blob_ssm_path, 'type': 'PLAINTEXT'}, # DOTENV_BLOB 경로 추가
-                {'name': 'SOURCE_DIR', 'value': source_dir, 'type': 'PLAINTEXT'}, # 소스 디렉토리
-                {'name': 'BUILD_CONTEXT', 'value': source_dir, 'type': 'PLAINTEXT'} # 빌드 컨텍스트
+                {'name': 'DOTENV_BLOB_SSM_PATH', 'value': env_blob_ssm_path, 'type': 'PLAINTEXT'},
+                {'name': 'SOURCE_DIR', 'value': source_dir, 'type': 'PLAINTEXT'},
+                {'name': 'BUILD_CONTEXT', 'value': build_context, 'type': 'PLAINTEXT'},
+                {'name': 'DOCKERFILE_PATH', 'value': dockerfile_path or '', 'type': 'PLAINTEXT'},
+                {'name': 'HAS_GRADLE_WRAPPER', 'value': 'true' if gradle_wrapper else 'false', 'type': 'PLAINTEXT'}
             ]
             
             build_response = codebuild.start_build(
@@ -272,3 +295,322 @@ def select_codebuild_project(framework: str) -> str:
     }
     
     return project_mapping.get(base_framework)
+
+
+# =============================================================================
+# 새로운 향상된 저장소 분석 함수들
+# =============================================================================
+
+def explore_repository_structure(repository_full_name: str, branch: str, github_token: str) -> dict:
+    """
+    GitHub API를 활용하여 저장소 전체 구조를 효율적으로 탐색합니다.
+    
+    Args:
+        repository_full_name: 리포지토리 full name (예: "owner/repo")
+        branch: 분석할 브랜치
+        github_token: GitHub 액세스 토큰
+        
+    Returns:
+        {
+            'files': {'path/to/file': True, ...},
+            'directories': {'path/to/dir': True, ...},
+            'tree': {recursive git tree structure}
+        }
+    """
+    print(f"Exploring repository structure for {repository_full_name}:{branch}")
+    
+    # GitHub Tree API를 사용하여 전체 구조를 한 번에 가져오기
+    tree_url = f"https://api.github.com/repos/{repository_full_name}/git/trees/{branch}?recursive=1"
+    headers = {
+        'Authorization': f'token {github_token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    
+    try:
+        response = requests.get(tree_url, headers=headers)
+        response.raise_for_status()
+        
+        tree_data = response.json()
+        files = {}
+        directories = {}
+        
+        # tree 데이터를 파싱하여 파일과 디렉토리 구조 생성
+        for item in tree_data.get('tree', []):
+            path = item['path']
+            item_type = item['type']
+            
+            if item_type == 'blob':  # 파일
+                files[path] = True
+            elif item_type == 'tree':  # 디렉토리
+                directories[path] = True
+        
+        print(f"Successfully explored repository: {len(files)} files, {len(directories)} directories")
+        
+        return {
+            'files': files,
+            'directories': directories,
+            'tree': tree_data
+        }
+        
+    except requests.RequestException as e:
+        print(f"Failed to explore repository structure: {str(e)}")
+        return {'files': {}, 'directories': {}, 'tree': {}}
+
+
+def find_gradle_projects(repo_structure: dict) -> list:
+    """
+    저장소 구조에서 build.gradle 파일이 있는 모든 디렉토리를 찾습니다.
+    
+    Args:
+        repo_structure: explore_repository_structure()의 결과
+        
+    Returns:
+        [
+            {
+                'gradle_dir': 'backend',
+                'gradle_file': 'backend/build.gradle',
+                'has_wrapper': True,
+                'is_spring_boot': False  # 추후 확인
+            }
+        ]
+    """
+    files = repo_structure.get('files', {})
+    gradle_projects = []
+    
+    # build.gradle 파일들을 찾기
+    for file_path in files.keys():
+        if file_path.endswith('build.gradle'):
+            # 디렉토리 경로 추출
+            gradle_dir = file_path.rsplit('/', 1)[0] if '/' in file_path else '.'
+            
+            # Gradle Wrapper 존재 확인
+            wrapper_file = f"{gradle_dir}/gradlew" if gradle_dir != '.' else "gradlew"
+            has_wrapper = wrapper_file in files
+            
+            gradle_projects.append({
+                'gradle_dir': gradle_dir,
+                'gradle_file': file_path,
+                'has_wrapper': has_wrapper,
+                'is_spring_boot': False  # verify_spring_boot_project()에서 확인
+            })
+    
+    print(f"Found {len(gradle_projects)} Gradle projects: {[p['gradle_dir'] for p in gradle_projects]}")
+    return gradle_projects
+
+
+def verify_spring_boot_project(gradle_file_path: str, repository_full_name: str, branch: str, github_token: str) -> bool:
+    """
+    build.gradle 파일 내용을 확인하여 Spring Boot 프로젝트인지 검증합니다.
+    
+    Args:
+        gradle_file_path: build.gradle 파일 경로
+        repository_full_name: 리포지토리 full name
+        branch: 브랜치
+        github_token: GitHub 토큰
+        
+    Returns:
+        True if Spring Boot project, False otherwise
+    """
+    content_url = f"https://api.github.com/repos/{repository_full_name}/contents/{gradle_file_path}?ref={branch}"
+    headers = {
+        'Authorization': f'token {github_token}',
+        'Accept': 'application/vnd.github.v3.raw'
+    }
+    
+    try:
+        response = requests.get(content_url, headers=headers)
+        if response.status_code == 200:
+            content = response.text
+            # Spring Boot 관련 의존성 확인
+            spring_boot_indicators = [
+                'org.springframework.boot',
+                'spring-boot-starter',
+                'org.springframework.boot:spring-boot-gradle-plugin',
+                '@SpringBootApplication'
+            ]
+            
+            is_spring_boot = any(indicator in content for indicator in spring_boot_indicators)
+            if is_spring_boot:
+                print(f"Confirmed Spring Boot project: {gradle_file_path}")
+            
+            return is_spring_boot
+    except Exception as e:
+        print(f"Failed to verify Spring Boot project {gradle_file_path}: {str(e)}")
+    
+    return False
+
+
+def find_dockerfile_candidates(gradle_dir: str, repo_structure: dict) -> list:
+    """
+    특정 Gradle 프로젝트를 위한 Dockerfile 후보들을 우선순위별로 반환합니다.
+    
+    Args:
+        gradle_dir: Gradle 프로젝트 디렉토리 (예: "backend", ".")
+        repo_structure: 저장소 구조
+        
+    Returns:
+        [
+            {
+                'dockerfile_path': 'backend/Dockerfile',
+                'priority': 1,
+                'build_context': 'backend'
+            }
+        ]
+    """
+    files = repo_structure.get('files', {})
+    candidates = []
+    
+    # 우선순위별 Dockerfile 탐색 경로
+    if gradle_dir == ".":
+        # 루트 프로젝트의 경우
+        search_paths = [
+            ("Dockerfile", 1),
+            ("docker/Dockerfile", 2),
+            ("src/main/docker/Dockerfile", 3),
+            (".docker/Dockerfile", 4),
+            ("deploy/Dockerfile", 5)
+        ]
+    else:
+        # 서브디렉토리 프로젝트의 경우
+        search_paths = [
+            # Priority 1: Same directory as build.gradle (40% frequency)
+            (f"{gradle_dir}/Dockerfile", 1),
+            
+            # Priority 2: Docker subdirectory of project (25% frequency)  
+            (f"{gradle_dir}/docker/Dockerfile", 2),
+            
+            # Priority 3: Maven-style convention (10% frequency)
+            (f"{gradle_dir}/src/main/docker/Dockerfile", 3),
+            
+            # Priority 4: Hidden docker directory (5% frequency)
+            (f"{gradle_dir}/.docker/Dockerfile", 4),
+            
+            # Priority 5: Repository root (fallback for multi-module, 15% frequency)
+            ("Dockerfile", 5),
+            
+            # Priority 6: Root docker directories (fallback, 5% frequency)
+            ("docker/Dockerfile", 6),
+            ("deploy/Dockerfile", 7),
+            (".docker/Dockerfile", 8),
+            (f"deployment/{gradle_dir}/Dockerfile", 9)
+        ]
+    
+    for dockerfile_path, priority in search_paths:
+        if dockerfile_path and dockerfile_path in files:
+            candidates.append({
+                'dockerfile_path': dockerfile_path,
+                'priority': priority,
+                'build_context': determine_build_context(dockerfile_path, gradle_dir)
+            })
+    
+    # 우선순위별 정렬
+    candidates.sort(key=lambda x: x['priority'])
+    
+    if candidates:
+        print(f"Found {len(candidates)} Dockerfile candidates for {gradle_dir}: {[c['dockerfile_path'] for c in candidates[:3]]}")
+    
+    return candidates
+
+
+def determine_build_context(dockerfile_path: str, gradle_dir: str) -> str:
+    """
+    Dockerfile 위치에 따른 최적의 Docker 빌드 컨텍스트를 결정합니다.
+    
+    Args:
+        dockerfile_path: Dockerfile 경로 (예: "backend/Dockerfile")
+        gradle_dir: Gradle 프로젝트 디렉토리 (예: "backend")
+        
+    Returns:
+        빌드 컨텍스트 디렉토리 (예: "backend", ".")
+    """
+    dockerfile_dir = dockerfile_path.rsplit('/', 1)[0] if '/' in dockerfile_path else '.'
+    
+    if dockerfile_dir == "":
+        return "."  # Root level Dockerfile
+    elif dockerfile_path.startswith(gradle_dir + "/") and gradle_dir != ".":
+        return dockerfile_dir  # Dockerfile within gradle project
+    elif dockerfile_dir == gradle_dir:
+        return gradle_dir  # Same directory
+    else:
+        return dockerfile_dir  # Dockerfile outside gradle project
+
+
+def analyze_spring_gradle_project(repository_full_name: str, branch: str, github_token: str) -> dict:
+    """
+    저장소를 분석하여 Spring Boot + Gradle 프로젝트 정보를 반환합니다.
+    기존 detect_framework() 함수를 대체할 새로운 분석 함수입니다.
+    
+    Returns:
+        {
+            'framework': 'spring-boot-gradle',
+            'source_directory': 'backend',
+            'dockerfile_path': 'backend/Dockerfile', 
+            'build_context': 'backend',
+            'gradle_wrapper': True,
+            'gradle_file': 'backend/build.gradle'
+        }
+        또는 None (Spring Boot 프로젝트가 아닌 경우)
+    """
+    print(f"Starting enhanced Spring Boot analysis for {repository_full_name}:{branch}")
+    
+    # 1. 저장소 구조 탐색
+    repo_structure = explore_repository_structure(repository_full_name, branch, github_token)
+    if not repo_structure.get('files'):
+        print("Failed to explore repository structure")
+        return None
+    
+    # 2. Gradle 프로젝트들 찾기
+    gradle_projects = find_gradle_projects(repo_structure)
+    if not gradle_projects:
+        print("No Gradle projects found")
+        return None
+    
+    # 3. Spring Boot 프로젝트 찾기
+    spring_boot_projects = []
+    for project in gradle_projects:
+        if verify_spring_boot_project(
+            project['gradle_file'], 
+            repository_full_name, 
+            branch, 
+            github_token
+        ):
+            project['is_spring_boot'] = True
+            spring_boot_projects.append(project)
+    
+    if not spring_boot_projects:
+        print("No Spring Boot projects found")
+        return None
+    
+    # 4. 첫 번째 Spring Boot 프로젝트 선택 (추후 멀티모듈 지원 시 개선)
+    selected_project = spring_boot_projects[0]
+    gradle_dir = selected_project['gradle_dir']
+    
+    print(f"Selected Spring Boot project: {gradle_dir}")
+    
+    # 5. Dockerfile 탐색
+    dockerfile_candidates = find_dockerfile_candidates(gradle_dir, repo_structure)
+    
+    result = {
+        'framework': 'spring-boot-gradle',
+        'source_directory': gradle_dir,
+        'gradle_wrapper': selected_project['has_wrapper'],
+        'gradle_file': selected_project['gradle_file']
+    }
+    
+    if dockerfile_candidates:
+        best_dockerfile = dockerfile_candidates[0]  # 최고 우선순위
+        result.update({
+            'dockerfile_path': best_dockerfile['dockerfile_path'],
+            'build_context': best_dockerfile['build_context'],
+            'dockerfile_found': True
+        })
+        print(f"Found Dockerfile: {best_dockerfile['dockerfile_path']} (context: {best_dockerfile['build_context']})")
+    else:
+        result.update({
+            'dockerfile_path': None,
+            'build_context': gradle_dir,
+            'dockerfile_found': False
+        })
+        print(f"No Dockerfile found, will auto-generate in build context: {gradle_dir}")
+    
+    return result

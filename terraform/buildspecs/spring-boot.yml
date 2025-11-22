@@ -2,6 +2,12 @@ version: 0.2
 phases:
   pre_build:
     commands:
+      - echo "=== Enhanced Spring Boot Gradle Build Started ==="
+      - echo "Build Environment Variables:"
+      - echo "  Source Directory: $SOURCE_DIR"
+      - echo "  Build Context: $BUILD_CONTEXT" 
+      - echo "  Dockerfile Path: $DOCKERFILE_PATH"
+      - echo "  Has Gradle Wrapper: $HAS_GRADLE_WRAPPER"
       - echo "Logging in to Amazon ECR..."
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
       - echo "Restoring .env file from SSM if provided..."
@@ -9,59 +15,114 @@ phases:
   build:
     commands:
       - echo "Build started for Spring Boot on `date`"
-      - echo "Current directory:" && pwd && ls -la
+      - echo "Initial directory:" && pwd && ls -la
       - |
-        BUILD_DIR="."
-        if [ -n "$SOURCE_DIR" ]; then
-          echo "Source directory specified: $SOURCE_DIR"
-          BUILD_DIR="$SOURCE_DIR"
+        # Step 1: Navigate to source directory for Gradle build
+        if [ -n "$SOURCE_DIR" ] && [ "$SOURCE_DIR" != "." ]; then
+          echo "Changing to source directory: $SOURCE_DIR"
           cd $SOURCE_DIR
-          echo "Changed to directory: $SOURCE_DIR" && pwd && ls -la
+          echo "Current directory after cd: $(pwd)"
+          echo "Contents:" && ls -la
+        else
+          echo "Building in root directory"
         fi
       - |
+        # Step 2: Execute Gradle build with wrapper detection
         echo "Building Spring Boot application..."
-        if [ -f "build.gradle" ]; then
-          echo "Found build.gradle, building with Gradle"
-          chmod +x gradlew 2>/dev/null || echo "No gradlew found, using system gradle"
-          if [ -f "gradlew" ]; then
-            ./gradlew build -x test --no-daemon
-          else
-            gradle build -x test
-          fi
-        else
-          echo "No build.gradle found in current directory"
+        if [ ! -f "build.gradle" ]; then
+          echo "ERROR: No build.gradle found in current directory"
           exit 1
         fi
-      - |
-        echo "Checking for Dockerfile..."
-        DOCKERFILE_PATH=""
-        if [ -f "Dockerfile" ]; then
-          DOCKERFILE_PATH="Dockerfile"
-          echo "Found Dockerfile in current directory"
-        elif [ -f "../Dockerfile" ]; then
-          DOCKERFILE_PATH="../Dockerfile"
-          echo "Found Dockerfile in parent directory"
+        
+        echo "Found build.gradle, proceeding with build..."
+        if [ "$HAS_GRADLE_WRAPPER" = "true" ] && [ -f "gradlew" ]; then
+          echo "Using Gradle Wrapper"
+          chmod +x gradlew
+          ./gradlew clean build -x test --no-daemon
         else
-          echo "No Dockerfile found - creating default Dockerfile for Spring Boot..."
-          echo 'FROM eclipse-temurin:17-jre-alpine' > Dockerfile
-          echo 'WORKDIR /app' >> Dockerfile
-          echo 'COPY build/libs/*.jar app.jar' >> Dockerfile
-          echo 'EXPOSE 8080' >> Dockerfile
-          echo 'ENTRYPOINT ["java", "-jar", "app.jar"]' >> Dockerfile
-          DOCKERFILE_PATH="Dockerfile"
-          echo "Created default Dockerfile"
+          echo "Using system Gradle (no wrapper found)"
+          gradle clean build -x test --no-daemon
         fi
-        echo "Using Dockerfile at: $DOCKERFILE_PATH"
+        
+        echo "Gradle build completed successfully"
+        echo "Build artifacts:" && find build -name "*.jar" -type f 2>/dev/null || echo "No JAR files found"
       - |
+        # Step 3: Navigate to build context for Docker operations
+        if [ -n "$BUILD_CONTEXT" ] && [ "$BUILD_CONTEXT" != "$(basename $(pwd))" ]; then
+          echo "Changing to build context: $BUILD_CONTEXT"
+          cd $CODEBUILD_SRC_DIR/$BUILD_CONTEXT
+          echo "Current directory for Docker build: $(pwd)"
+          echo "Contents:" && ls -la
+        else
+          echo "Docker build context is current directory"
+        fi
+      - |
+        # Step 4: Handle Dockerfile - use discovered or auto-generate
+        FINAL_DOCKERFILE_PATH=""
+        
+        if [ -n "$DOCKERFILE_PATH" ] && [ "$DOCKERFILE_PATH" != "" ]; then
+          # Use discovered Dockerfile path (relative to build context)
+          if [ "$BUILD_CONTEXT" != "." ] && [[ "$DOCKERFILE_PATH" == "$BUILD_CONTEXT"* ]]; then
+            # Remove build context prefix from dockerfile path
+            RELATIVE_DOCKERFILE_PATH=${DOCKERFILE_PATH#$BUILD_CONTEXT/}
+            FINAL_DOCKERFILE_PATH="$RELATIVE_DOCKERFILE_PATH"
+          else
+            FINAL_DOCKERFILE_PATH="$DOCKERFILE_PATH"
+          fi
+          
+          if [ -f "$FINAL_DOCKERFILE_PATH" ]; then
+            echo "Using discovered Dockerfile: $FINAL_DOCKERFILE_PATH"
+          else
+            echo "WARNING: Discovered Dockerfile not found at $FINAL_DOCKERFILE_PATH, auto-generating..."
+            FINAL_DOCKERFILE_PATH="Dockerfile"
+          fi
+        else
+          echo "No Dockerfile discovered, auto-generating..."
+          FINAL_DOCKERFILE_PATH="Dockerfile"
+        fi
+        
+        # Auto-generate Dockerfile if needed
+        if [ ! -f "$FINAL_DOCKERFILE_PATH" ]; then
+          echo "Creating optimized Dockerfile for Spring Boot..."
+          cat > $FINAL_DOCKERFILE_PATH << 'EOF'
+FROM eclipse-temurin:17-jre-alpine
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S spring && adduser -u 1001 -S spring -G spring
+
+WORKDIR /app
+
+# Copy JAR file (support both single and multiple JAR scenarios)
+COPY build/libs/*.jar app.jar
+
+# Set ownership
+RUN chown -R spring:spring /app
+USER spring
+
+EXPOSE 8080
+
+# Use exec form for better signal handling
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
+          echo "Created optimized Dockerfile with security best practices"
+        fi
+        
+        echo "Final Dockerfile path: $FINAL_DOCKERFILE_PATH"
+        echo "Dockerfile contents:"
+        cat "$FINAL_DOCKERFILE_PATH"
+      - |
+        # Step 5: Build Docker image with proper context
         echo "Building Docker image..."
-        if [ -n "$SOURCE_DIR" ]; then
-          echo "Building from subdirectory context: $SOURCE_DIR"
-          cd $CODEBUILD_SRC_DIR
-          docker build -f $SOURCE_DIR/$DOCKERFILE_PATH -t $ECR_IMAGE_URI $SOURCE_DIR
-        else
-          echo "Building from root directory"
-          docker build -f $DOCKERFILE_PATH -t $ECR_IMAGE_URI .
-        fi
+        echo "Docker build context: $(pwd)"
+        echo "Dockerfile: $FINAL_DOCKERFILE_PATH"
+        
+        # Build with proper context - current directory is already the build context
+        docker build -f "$FINAL_DOCKERFILE_PATH" -t $ECR_IMAGE_URI .
+        
+        echo "Docker image built successfully"
+        docker images | grep $ECR_IMAGE_URI
   post_build:
     commands:
+      - echo "Pushing Docker image to ECR..."
       - docker push $ECR_IMAGE_URI
+      - echo "Build and push completed successfully"
