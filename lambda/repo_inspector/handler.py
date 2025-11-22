@@ -103,11 +103,21 @@ def handler(event, context):
 
         # 5. 배포 상태를 'BUILDING'으로 업데이트
         print(f"Updating status to BUILDING for deployment {deployment_id}.")
+        
+        # Spring Boot 프로젝트일 때 포트 8080 설정
+        extra_attrs = {
+            'framework': framework,
+            'codebuild_project': codebuild_project
+        }
+        
+        if framework and framework.startswith('spring-boot'):
+            extra_attrs['port'] = 8080
+            print(f"Detected Spring Boot project - setting port to 8080")
+        
         update_deployment_status(
             DEPLOYMENTS_TABLE,
             deployment_id, 'BUILDING',
-            framework=framework,
-            codebuild_project=codebuild_project
+            **extra_attrs
         )
         print(f"Successfully updated deployment status to BUILDING for deployment {deployment_id}")
         
