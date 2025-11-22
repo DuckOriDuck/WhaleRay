@@ -8,10 +8,20 @@ phases:
     commands:
       - echo "Build started for Spring Boot on `date`"
       - |
-        if [ -f "pom.xml" ]; then
-          mvn clean package -DskipTests
-        elif [ -f "build.gradle" ]; then
-          ./gradlew build -x test
+        if [ -f "build.gradle" ]; then
+          chmod +x gradlew
+          ./gradlew build -x test --no-daemon
+        fi
+      - |
+        if [ ! -f "Dockerfile" ]; then
+          echo "Creating default Dockerfile for Spring Boot..."
+          cat > Dockerfile <<'DOCKER'
+FROM openjdk:17-jre-slim
+WORKDIR /app
+COPY build/libs/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+DOCKER
         fi
       - docker build -t $ECR_IMAGE_URI .
   post_build:

@@ -114,7 +114,7 @@ def handler(event, context):
 
 def detect_framework(repository_full_name: str, branch: str, github_token: str) -> Optional[str]:
     """
-    GitHub 레포지토리에서 프레임워크 감지
+    GitHub 레포지토리에서 프레임워크 감지 및 소스 디렉토리 탐지
     """
     print(f"Detecting framework for {repository_full_name} on branch {branch}...")
     headers = {'Authorization': f'Bearer {github_token}', 'Accept': 'application/vnd.github.v3+json'}
@@ -129,23 +129,56 @@ def detect_framework(repository_full_name: str, branch: str, github_token: str) 
             print(f"Error checking file {file_path}: {e}")
             return False
 
-    if check_file_exists('pom.xml') or check_file_exists('build.gradle'):
+    def get_directory_contents(path: str = "") -> list:
+        """디렉토리 내용을 가져옴"""
+        url = f"{base_url}{path}?ref={branch}"
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except requests.exceptions.RequestException as e:
+            print(f"Error getting directory contents {path}: {e}")
+            return []
+
+    # 프로젝트 루트 확인
+    if check_file_exists('build.gradle'):
         return 'spring-boot'
-    if check_file_exists('next.config.js'):
-        return 'nextjs'
-    if check_file_exists('package.json'):
-        return 'nodejs'
+    
+    # 서브디렉토리 탐색 (최대 2단계 깊이)
+    root_contents = get_directory_contents()
+    
+    for item in root_contents:
+        if item.get('type') == 'dir':
+            dir_name = item.get('name', '')
+            
+            # 일반적인 소스 디렉토리명들 확인
+            if dir_name.lower() in ['src', 'app', 'backend', 'frontend', 'server', 'api']:
+                dir_path = f"{dir_name}/"
+                
+                if check_file_exists(f'{dir_path}build.gradle'):
+                    print(f"Found Spring Boot project in {dir_name}/ directory")
+                    return f'spring-boot:{dir_name}'
+    
+    # Dockerfile 위치도 함께 확인
+    dockerfile_locations = []
+    if check_file_exists('Dockerfile'):
+        dockerfile_locations.append('root')
+    
+    for item in root_contents:
+        if item.get('type') == 'dir':
+            dir_name = item.get('name', '')
+            if check_file_exists(f'{dir_name}/Dockerfile'):
+                dockerfile_locations.append(dir_name)
+    
+    if dockerfile_locations:
+        print(f"Found Dockerfile in: {dockerfile_locations}")
     
     return None
 
 
 def select_codebuild_project(framework: str) -> Optional[str]:
-    """
-    프레임워크에 따라 CodeBuild 프로젝트 선택
-    """
-    mapping = {
-        'spring-boot': f'{PROJECT_NAME}-spring-boot',
-        'nodejs': f'{PROJECT_NAME}-nodejs',
-        'nextjs': f'{PROJECT_NAME}-nextjs'
-    }
-    return mapping.get(framework)
+    base_framework = framework.split(':')[0]
+    if base_framework == 'spring-boot':
+        return f'{PROJECT_NAME}-spring-boot'
+    return None
