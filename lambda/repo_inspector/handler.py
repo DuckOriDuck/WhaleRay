@@ -146,7 +146,7 @@ def handler(event, context):
                 'framework': framework,
                 'codebuild_project': codebuild_project,
                 'codebuildLogGroup': f'/aws/codebuild/{codebuild_project}',
-                'codebuildLogStream': f'{deployment_id}/{build_id.split("/")[-1]}',
+                'codebuildLogStream': f'{deployment_id}/{build_id.split(":")[-1]}',
                 'buildId': build_id
             }
             

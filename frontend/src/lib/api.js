@@ -136,16 +136,23 @@ export async function getGitHubRepositories() {
 /**
  * POST /deployments - 새 배포 시작
  */
-export async function createDeployment(repositoryFullName, branch) {
+export async function createDeployment(repositoryFullName, branch, envFileContent = '') {
   const headers = getAuthHeaders()
+  
+  const requestBody = {
+    repositoryFullName,
+    branch
+  }
+  
+  // 환경변수 내용이 있으면 추가
+  if (envFileContent.trim()) {
+    requestBody.envFileContent = envFileContent
+  }
 
   const response = await fetch(`${API_BASE_URL}/deployments`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      repositoryFullName,
-      branch
-    })
+    body: JSON.stringify(requestBody)
   })
 
   if (!response.ok) {

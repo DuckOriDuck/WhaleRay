@@ -8,6 +8,7 @@ export default function DeployForm({ repositories, loading, error, onLoadReposit
   const [success, setSuccess] = useState(null)
   const [selectedRepo, setSelectedRepo] = useState('')
   const [branch, setBranch] = useState('main')
+  const [envContent, setEnvContent] = useState('')
 
   useEffect(() => {
     const handleMessage = (event) => {
@@ -30,12 +31,13 @@ export default function DeployForm({ repositories, loading, error, onLoadReposit
     setSuccess(null)
 
     try {
-      const result = await createDeployment(selectedRepo, branch)
+      const result = await createDeployment(selectedRepo, branch, envContent)
       setSuccess(`배포가 시작되었습니다! Deployment ID: ${result.deploymentId}`)
 
       // 폼 리셋
       setSelectedRepo('')
       setBranch('main')
+      setEnvContent('')
     } catch (err) {
       setDeployError(err.message)
     } finally {
@@ -99,6 +101,30 @@ export default function DeployForm({ repositories, loading, error, onLoadReposit
               onChange={(e) => setBranch(e.target.value)}
               placeholder="main"
               required
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="envContent">환경변수 (.env)</label>
+            <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+              환경변수는 KMS로 암호화되어 안전하게 저장됩니다. 재배포시에는 이전 설정을 자동으로 사용하므로 비워두셔도 됩니다.
+            </div>
+            <textarea
+              id="envContent"
+              value={envContent}
+              onChange={(e) => setEnvContent(e.target.value)}
+              placeholder={`# 예시:\nDATABASE_URL=postgres://...\nAPI_KEY=your-secret-key\nPORT=3000\n\n# 주석도 지원됩니다\n# 재배포시에는 비워두면 이전 설정 사용`}
+              rows={8}
+              style={{
+                width: '100%',
+                padding: '10px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                fontSize: '13px',
+                fontFamily: 'monospace',
+                resize: 'vertical',
+                backgroundColor: '#f8f9fa'
+              }}
             />
           </div>
 
