@@ -102,3 +102,9 @@ variable "service_domain_prefix" {
   type        = string
   default     = "service"
 }
+
+variable "db_domain_prefix" {
+  description = "Subdomain prefix for database access (e.g., db -> db.domain.com)"
+  type        = string
+  default     = "db"
+}

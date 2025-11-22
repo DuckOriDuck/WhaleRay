@@ -590,38 +590,4 @@ resource "aws_lambda_function" "database" {
 locals {
   db_event_listener_zip_path = "${path.module}/../build/database_event_listener.zip"
 }
-
-resource "null_resource" "archive_db_event_listener" {
-  depends_on = [null_resource.clean_lambda_pycache]
-
-  triggers = {
-    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/database_event_listener", "**") : filesha1("${path.module}/../lambda/database_event_listener/${f}")]))
-  }
-
-  provisioner "local-exec" {
-    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/database_event_listener ${local.db_event_listener_zip_path}"
-    interpreter = ["/bin/bash", "-c"]
-  }
-}
-
-resource "aws_lambda_function" "database_event_listener" {
-  depends_on    = [null_resource.archive_db_event_listener]
-  filename      = local.db_event_listener_zip_path
-  function_name = "${var.project_name}-db-event-listener"
-  role          = aws_iam_role.lambda.arn
-  handler       = "handler.handle_event"
-  runtime       = "python3.11"
-  timeout       = 60
-
-  layers = [
-    aws_lambda_layer_version.common_libs_layer.arn
-  ]
-
-  source_code_hash = try(filebase64sha256(local.db_event_listener_zip_path), null)
-
-  environment {
-    variables = {
-      DATABASE_TABLE = aws_dynamodb_table.whaleray_database.name
-    }
-  }
 }
