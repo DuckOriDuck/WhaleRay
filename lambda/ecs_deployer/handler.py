@@ -4,6 +4,7 @@ import boto3
 import time
 
 ecs = boto3.client('ecs')
+servicediscovery = boto3.client('servicediscovery')
 # Lambda Layer에서 공통 유틸리티 함수 가져오기
 from github_utils import update_deployment_status
 
@@ -15,13 +16,64 @@ SERVICES_TABLE = os.environ['SERVICES_TABLE']
 TASK_EXECUTION_ROLE = os.environ['TASK_EXECUTION_ROLE']
 TASK_ROLE = os.environ['TASK_ROLE']
 FRONTEND_URL = os.environ['FRONTEND_URL']
-SERVICE_DISCOVERY_REGISTRY_ARN = os.environ['SERVICE_DISCOVERY_REGISTRY_ARN']
+SERVICE_DISCOVERY_NAMESPACE_ID = os.environ['SERVICE_DISCOVERY_NAMESPACE_ID']
 # Fargate network configuration
 PRIVATE_SUBNETS = os.environ['PRIVATE_SUBNETS']
 FARGATE_TASK_SG = os.environ['FARGATE_TASK_SG']
 
 deployments_table = dynamodb.Table(DEPLOYMENTS_TABLE)
 services_table = dynamodb.Table(SERVICES_TABLE)
+
+
+def create_or_get_service_discovery_service(service_id):
+    """
+    각 서비스마다 개별 Cloud Map 서비스 생성 또는 조회
+    Returns: Service Discovery ARN
+    """
+    try:
+        # 기존 서비스 조회 시도
+        namespace_services = servicediscovery.list_services(
+            Filters=[
+                {
+                    'Name': 'NAMESPACE_ID',
+                    'Values': [SERVICE_DISCOVERY_NAMESPACE_ID]
+                }
+            ]
+        )
+        
+        # service_id와 일치하는 서비스 찾기
+        for service in namespace_services['Services']:
+            if service['Name'] == service_id:
+                print(f"Found existing Cloud Map service for {service_id}: {service['Arn']}")
+                return service['Arn']
+        
+        # 서비스가 없으면 새로 생성
+        print(f"Creating new Cloud Map service for {service_id}")
+        response = servicediscovery.create_service(
+            Name=service_id,
+            NamespaceId=SERVICE_DISCOVERY_NAMESPACE_ID,
+            DnsConfig={
+                'NamespaceId': SERVICE_DISCOVERY_NAMESPACE_ID,
+                'DnsRecords': [
+                    {
+                        'Type': 'A',
+                        'TTL': 10
+                    }
+                ],
+                'RoutingPolicy': 'MULTIVALUE'
+            },
+            HealthCheckCustomConfig={
+                'FailureThreshold': 1
+            }
+        )
+        
+        service_arn = response['Service']['Arn']
+        print(f"Created Cloud Map service for {service_id}: {service_arn}")
+        return service_arn
+        
+    except Exception as e:
+        print(f"Error creating/getting Cloud Map service for {service_id}: {str(e)}")
+        raise
 
 
 def handler(event, context):
@@ -142,6 +194,9 @@ def handler(event, context):
                 raise Exception('Service not found or inactive')
 
         except Exception:
+            # 개별 Cloud Map 서비스 생성 또는 조회
+            service_discovery_arn = create_or_get_service_discovery_service(service_id)
+            
             # 새 서비스 생성 (Fargate)
             ecs.create_service(
                 cluster=CLUSTER_NAME,
@@ -156,10 +211,10 @@ def handler(event, context):
                         'assignPublicIp': 'DISABLED'
                     }
                 },
-                # Cloud Map 서비스 검색 등록 (A 레코드)
+                # Cloud Map 서비스 검색 등록 (A 레코드) - 개별 서비스 사용
                 # awsvpc 네트워크 모드에서는 containerName만 사용
                 serviceRegistries=[{
-                    'registryArn': SERVICE_DISCOVERY_REGISTRY_ARN,
+                    'registryArn': service_discovery_arn,
                     'containerName': service_name
                 }]
             )

@@ -100,6 +100,16 @@ resource "aws_iam_role_policy" "lambda" {
       {
         Effect = "Allow"
         Action = [
+          "servicediscovery:CreateService",
+          "servicediscovery:GetService",
+          "servicediscovery:ListServices",
+          "servicediscovery:UpdateService"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "logs:GetLogEvents",
           "logs:FilterLogEvents",
           "logs:DescribeLogStreams"
@@ -392,7 +402,7 @@ resource "aws_lambda_function" "ecs_deployer" {
       # Fargate 네트워크 설정
       PRIVATE_SUBNETS                = join(",", aws_subnet.private[*].id)
       FARGATE_TASK_SG                = aws_security_group.fargate_tasks.id
-      SERVICE_DISCOVERY_REGISTRY_ARN = aws_service_discovery_service.app_services.arn
+      SERVICE_DISCOVERY_NAMESPACE_ID = aws_service_discovery_private_dns_namespace.whaleray.id
     }
   }
 }
