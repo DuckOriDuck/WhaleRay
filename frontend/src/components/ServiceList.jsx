@@ -63,7 +63,7 @@ export default function ServiceList({ onStartDeployment, onRefreshReady }) {
         </p>
 
         {checkingInstall && (
-          <p style={{ color: '#2563eb', marginBottom: '16px' }}>
+          <p style={{ color: '#10B981', marginBottom: '16px' }}>
             GitHub App 설치 상태를 확인 중...
           </p>
         )}
@@ -73,7 +73,7 @@ export default function ServiceList({ onStartDeployment, onRefreshReady }) {
             onClick={loadServices}
             style={{
               padding: '12px 24px',
-              backgroundColor: '#2563eb',
+              backgroundColor: '#10B981',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
@@ -81,8 +81,8 @@ export default function ServiceList({ onStartDeployment, onRefreshReady }) {
               cursor: 'pointer',
               fontWeight: '500'
             }}
-            onMouseOver={(e) => (e.target.style.backgroundColor = '#1d4ed8')}
-            onMouseOut={(e) => (e.target.style.backgroundColor = '#2563eb')}
+            onMouseOver={(e) => (e.target.style.backgroundColor = '#059669')}
+            onMouseOut={(e) => (e.target.style.backgroundColor = '#10B981')}
           >
             다시 시도
           </button>
@@ -93,7 +93,7 @@ export default function ServiceList({ onStartDeployment, onRefreshReady }) {
             }}
             style={{
               padding: '12px 24px',
-              backgroundColor: '#2563eb',
+              backgroundColor: '#10B981',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
@@ -101,8 +101,8 @@ export default function ServiceList({ onStartDeployment, onRefreshReady }) {
               cursor: 'pointer',
               fontWeight: '500'
             }}
-            onMouseOver={(e) => (e.target.style.backgroundColor = '#1d4ed8')}
-            onMouseOut={(e) => (e.target.style.backgroundColor = '#2563eb')}
+            onMouseOver={(e) => (e.target.style.backgroundColor = '#059669')}
+            onMouseOut={(e) => (e.target.style.backgroundColor = '#10B981')}
           >
             Configure GitHub App
           </button>
@@ -123,7 +123,7 @@ export default function ServiceList({ onStartDeployment, onRefreshReady }) {
           onClick={onStartDeployment}
           style={{
             padding: '12px 24px',
-            backgroundColor: '#2563eb',
+            backgroundColor: '#10B981',
             color: 'white',
             border: 'none',
             borderRadius: '6px',
@@ -131,8 +131,8 @@ export default function ServiceList({ onStartDeployment, onRefreshReady }) {
             cursor: 'pointer',
             fontWeight: '500'
           }}
-          onMouseOver={(e) => (e.target.style.backgroundColor = '#1d4ed8')}
-          onMouseOut={(e) => (e.target.style.backgroundColor = '#2563eb')}
+          onMouseOver={(e) => (e.target.style.backgroundColor = '#059669')}
+          onMouseOut={(e) => (e.target.style.backgroundColor = '#10B981')}
         >
           Start Deployment
         </button>
@@ -166,23 +166,23 @@ export default function ServiceList({ onStartDeployment, onRefreshReady }) {
                     rel="noopener noreferrer"
                     style={{
                       fontSize: '12px',
-                      color: '#2563eb',
+                      color: '#10B981',
                       textDecoration: 'none',
                       padding: '4px 8px',
-                      backgroundColor: '#eff6ff',
+                      backgroundColor: '#ECFDF5',
                       borderRadius: '4px',
-                      border: '1px solid #bfdbfe',
+                      border: '1px solid #A7F3D0',
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '4px'
                     }}
                     onMouseOver={(e) => {
-                      e.target.style.backgroundColor = '#dbeafe'
-                      e.target.style.borderColor = '#93c5fd'
+                      e.target.style.backgroundColor = '#D1FAE5'
+                      e.target.style.borderColor = '#6EE7B7'
                     }}
                     onMouseOut={(e) => {
-                      e.target.style.backgroundColor = '#eff6ff'
-                      e.target.style.borderColor = '#bfdbfe'
+                      e.target.style.backgroundColor = '#ECFDF5'
+                      e.target.style.borderColor = '#A7F3D0'
                     }}
                   >
                     {service.serviceEndpoint}

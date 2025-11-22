@@ -77,85 +77,289 @@ export function DeploymentLogs({ deploymentId, logType = 'all' }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white border rounded-lg shadow">
-      {/* 헤더 */}
-      <div className="flex items-center justify-between p-4 border-b bg-gray-50">
-        <div className="flex items-center space-x-3">
-          <h3 className="font-semibold text-gray-900">배포 로그</h3>
-          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(status)} bg-gray-100`}>
-            {getStatusText(status)}
-          </span>
-          {isPolling && (
-            <div className="flex items-center space-x-1 text-xs text-blue-600">
-              <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-              <span>실시간 업데이트 중</span>
+    <div className="flex flex-col h-full bg-white">
+      {/* 개선된 헤더 */}
+      <div style={{
+        background: 'linear-gradient(135deg, #0F0F23 0%, #1A1A2E 50%, #10B981 100%)',
+        color: 'white',
+        padding: '16px 20px',
+        borderRadius: '8px 8px 0 0'
+      }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', margin: '0' }}>Deployment Logs</h3>
+              <span style={{
+                padding: '4px 12px',
+                fontSize: '12px',
+                fontWeight: '500',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)'
+              }}>
+                {getStatusText(status)}
+              </span>
             </div>
-          )}
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={refresh}
-            disabled={isLoading}
-            className="px-3 py-1 text-xs text-gray-600 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
-          >
-            {isLoading ? '로딩...' : '새로고침'}
-          </button>
+            {isPolling && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                <div style={{
+                  width: '8px',
+                  height: '8px',
+                  backgroundColor: '#10b981',
+                  borderRadius: '50%',
+                  animation: 'pulse 2s infinite'
+                }}></div>
+                <span>Live</span>
+              </div>
+            )}
+          </div>
           
-          {isPolling && (
+          <div className="flex items-center space-x-2">
             <button
-              onClick={stopPolling}
-              className="px-3 py-1 text-xs text-red-600 bg-white border border-red-300 rounded hover:bg-red-50"
+              onClick={refresh}
+              disabled={isLoading}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: '500',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                color: 'white',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '4px',
+                cursor: isLoading ? 'default' : 'pointer',
+                opacity: isLoading ? '0.6' : '1',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseOver={(e) => {
+                if (!isLoading) {
+                  e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'
+                }
+              }}
+              onMouseOut={(e) => {
+                if (!isLoading) {
+                  e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+                }
+              }}
             >
-              중단
+              {isLoading ? 'Loading...' : 'Refresh'}
             </button>
-          )}
+            
+            {isPolling && (
+              <button
+                onClick={stopPolling}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  color: 'white',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseOver={(e) => e.target.style.backgroundColor = 'rgba(239, 68, 68, 0.25)'}
+                onMouseOut={(e) => e.target.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'}
+              >
+                Stop
+              </button>
+            )}
+            
+            <button
+              onClick={() => {
+                const logContent = logs.map(log => formatLogMessage(log)).join('\n')
+                const blob = new Blob([logContent], { type: 'text/plain' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `deployment-${deploymentId}-logs.txt`
+                a.click()
+                URL.revokeObjectURL(url)
+              }}
+              disabled={logs.length === 0}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: '500',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                color: 'white',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '4px',
+                cursor: logs.length > 0 ? 'pointer' : 'default',
+                opacity: logs.length === 0 ? '0.5' : '1',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseOver={(e) => {
+                if (logs.length > 0) {
+                  e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'
+                }
+              }}
+              onMouseOut={(e) => {
+                if (logs.length > 0) {
+                  e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+                }
+              }}
+            >
+              Download
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 로그 컨테이너 */}
+      {/* 로그 컨테이너 - 개선된 스타일 */}
       <div 
         ref={logContainerRef}
         onScroll={handleScroll}
-        className="flex-1 p-4 overflow-auto bg-black text-green-400 font-mono text-sm"
-        style={{ minHeight: '300px', maxHeight: '500px' }}
+        style={{
+          flex: 1,
+          padding: '16px',
+          overflowY: 'auto',
+          background: 'linear-gradient(135deg, #0d1421 0%, #1a1a2e 50%, #16213e 100%)',
+          color: '#e2e8f0',
+          fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+          fontSize: '13px',
+          lineHeight: '1.5',
+          minHeight: '400px',
+          maxHeight: '600px',
+          position: 'relative'
+        }}
       >
         {error && (
-          <div className="mb-4 p-3 bg-red-900 text-red-200 rounded">
-            오류: {error}
+          <div style={{
+            marginBottom: '16px',
+            padding: '12px 16px',
+            background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+            color: 'white',
+            borderRadius: '6px',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            Error: {error}
           </div>
         )}
         
         {isLoading && logs.length === 0 && (
-          <div className="text-center text-gray-400 py-8">
-            로그를 불러오는 중...
+          <div style={{
+            textAlign: 'center',
+            color: '#94a3b8',
+            padding: '40px 0',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '12px'
+          }}>
+            <div style={{
+              width: '24px',
+              height: '24px',
+              border: '2px solid rgba(148, 163, 184, 0.3)',
+              borderTop: '2px solid #94a3b8',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }}></div>
+            <span>Loading deployment logs...</span>
           </div>
         )}
         
         {logs.length === 0 && !isLoading && !error && (
-          <div className="text-center text-gray-400 py-8">
-            아직 로그가 없습니다.
+          <div style={{
+            textAlign: 'center',
+            color: '#94a3b8',
+            padding: '40px 0',
+            fontSize: '14px'
+          }}>
+            <div style={{ marginBottom: '8px', fontWeight: '500' }}>No logs available</div>
+            <div style={{ opacity: '0.7' }}>Logs will appear here when deployment starts</div>
           </div>
         )}
         
-        {logs.map((log, index) => (
-          <div key={`${log.timestamp}-${index}`} className="mb-1 leading-relaxed">
-            <span className={log.source === 'build' ? 'text-blue-400' : 'text-green-400'}>
-              {formatLogMessage(log)}
-            </span>
-          </div>
-        ))}
+        {logs.map((log, index) => {
+          const isError = log.message.toLowerCase().includes('error') || log.message.toLowerCase().includes('오류')
+          const isWarning = log.message.toLowerCase().includes('warn') || log.message.toLowerCase().includes('경고')
+          const isSuccess = log.message.toLowerCase().includes('success') || log.message.toLowerCase().includes('성공') || log.message.toLowerCase().includes('completed')
+          
+          return (
+            <div 
+              key={`${log.timestamp}-${index}`} 
+              style={{
+                marginBottom: '4px',
+                padding: '8px 12px',
+                borderRadius: '4px',
+                backgroundColor: isError ? 'rgba(239, 68, 68, 0.1)' : 
+                                 isWarning ? 'rgba(245, 158, 11, 0.1)' : 
+                                 isSuccess ? 'rgba(34, 197, 94, 0.1)' : 
+                                 'rgba(51, 65, 85, 0.3)',
+                borderLeft: `3px solid ${
+                  isError ? '#ef4444' : 
+                  isWarning ? '#f59e0b' : 
+                  isSuccess ? '#22c55e' : 
+                  log.source === 'build' ? '#3b82f6' : '#10b981'
+                }`,
+                fontSize: '13px',
+                lineHeight: '1.4',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.backgroundColor = isError ? 'rgba(239, 68, 68, 0.15)' : 
+                                                        isWarning ? 'rgba(245, 158, 11, 0.15)' : 
+                                                        isSuccess ? 'rgba(34, 197, 94, 0.15)' : 
+                                                        'rgba(51, 65, 85, 0.4)'
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.backgroundColor = isError ? 'rgba(239, 68, 68, 0.1)' : 
+                                                        isWarning ? 'rgba(245, 158, 11, 0.1)' : 
+                                                        isSuccess ? 'rgba(34, 197, 94, 0.1)' : 
+                                                        'rgba(51, 65, 85, 0.3)'
+              }}
+            >
+              <span style={{
+                color: isError ? '#fca5a5' : 
+                       isWarning ? '#fbbf24' : 
+                       isSuccess ? '#86efac' : 
+                       log.source === 'build' ? '#93c5fd' : '#6ee7b7'
+              }}>
+                {formatLogMessage(log)}
+              </span>
+            </div>
+          )
+        })}
         
         {logs.length > 0 && (
-          <div className="mt-4 text-xs text-gray-500 text-center">
-            총 {logs.length}개의 로그
+          <div style={{
+            marginTop: '20px',
+            padding: '12px',
+            textAlign: 'center',
+            fontSize: '12px',
+            color: '#94a3b8',
+            backgroundColor: 'rgba(51, 65, 85, 0.2)',
+            borderRadius: '6px',
+            border: '1px solid rgba(51, 65, 85, 0.3)'
+          }}>
+            <span style={{ fontWeight: '500' }}>{logs.length} log entries</span>
+            <span style={{ marginLeft: '12px', opacity: '0.7' }}>• Last updated: {new Date().toLocaleTimeString()}</span>
           </div>
         )}
       </div>
       
-      {/* 하단 정보 */}
-      <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">
-        배포 ID: {deploymentId} | 로그 타입: {logType}
+      {/* 하단 정보 - 개선된 스타일 */}
+      <div style={{
+        padding: '12px 20px',
+        fontSize: '12px',
+        color: '#64748b',
+        backgroundColor: '#f1f5f9',
+        borderTop: '1px solid #e2e8f0',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        borderRadius: '0 0 8px 8px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <span><strong>Deployment ID:</strong> {deploymentId}</span>
+          <span><strong>Log Type:</strong> {logType}</span>
+        </div>
+        <div style={{ fontSize: '11px', opacity: '0.7' }}>
+          Updated: {new Date().toLocaleString()}
+        </div>
       </div>
     </div>
   )

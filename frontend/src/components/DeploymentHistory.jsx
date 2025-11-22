@@ -87,29 +87,56 @@ export default function DeploymentHistory({ onRefreshReady }) {
                 </div>
               )}
               
-              {/* 로그 보기 버튼 */}
-              <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+              {/* 로그 보기 버튼 - 심플하게 개선 */}
+              <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', paddingTop: '12px', borderTop: '1px solid #e0e0e0' }}>
                 <button
                   onClick={() => setSelectedDeploymentId(
                     selectedDeploymentId === deployment.deploymentId ? null : deployment.deploymentId
                   )}
                   style={{
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    backgroundColor: selectedDeploymentId === deployment.deploymentId ? '#007bff' : '#f8f9fa',
-                    color: selectedDeploymentId === deployment.deploymentId ? 'white' : '#007bff',
-                    border: '1px solid #007bff',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 18px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    backgroundColor: selectedDeploymentId === deployment.deploymentId ? '#10B981' : '#ffffff',
+                    color: selectedDeploymentId === deployment.deploymentId ? '#ffffff' : '#10B981',
+                    border: '1px solid #10B981',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    outline: 'none',
+                    boxShadow: selectedDeploymentId === deployment.deploymentId ? '0 2px 8px rgba(16, 185, 129, 0.3)' : 'none'
+                  }}
+                  onMouseOver={(e) => {
+                    if (selectedDeploymentId !== deployment.deploymentId) {
+                      e.target.style.backgroundColor = '#ECFDF5'
+                      e.target.style.transform = 'translateY(-1px)'
+                      e.target.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.15)'
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    if (selectedDeploymentId !== deployment.deploymentId) {
+                      e.target.style.backgroundColor = '#ffffff'
+                      e.target.style.transform = 'translateY(0)'
+                      e.target.style.boxShadow = 'none'
+                    }
                   }}
                 >
-                  {selectedDeploymentId === deployment.deploymentId ? '로그 숨기기' : '로그 보기'}
+                  {selectedDeploymentId === deployment.deploymentId ? 'Hide Logs' : 'View Logs'}
                 </button>
               </div>
               
               {/* 로그 컴포넌트 */}
               {selectedDeploymentId === deployment.deploymentId && (
-                <div style={{ marginTop: '16px' }}>
+                <div style={{ 
+                  marginTop: '20px',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  backgroundColor: '#fafafa'
+                }}>
                   <DeploymentLogs deploymentId={deployment.deploymentId} />
                 </div>
               )}
@@ -123,10 +150,10 @@ export default function DeploymentHistory({ onRefreshReady }) {
         <div style={{ 
           marginTop: '20px', 
           padding: '12px', 
-          background: '#e3f2fd', 
+          background: '#ECFDF5', 
           borderRadius: '6px', 
           fontSize: '13px',
-          color: '#1565c0'
+          color: '#059669'
         }}>
           💡 <strong>개선 예정:</strong> React Query 도입으로 실시간 업데이트 및 캐싱 성능을 개선할 예정입니다.
         </div>
