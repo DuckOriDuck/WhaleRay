@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { getDeployments } from '../lib/api'
+import { DeploymentLogs } from './DeploymentLogs'
 
 export default function DeploymentHistory({ onRefreshReady }) {
   const [deployments, setDeployments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [selectedDeploymentId, setSelectedDeploymentId] = useState(null)
 
   useEffect(() => {
     loadDeployments()
@@ -84,8 +86,49 @@ export default function DeploymentHistory({ onRefreshReady }) {
                   <strong>⚠️ Error:</strong> {deployment.errorMessage}
                 </div>
               )}
+              
+              {/* 로그 보기 버튼 */}
+              <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => setSelectedDeploymentId(
+                    selectedDeploymentId === deployment.deploymentId ? null : deployment.deploymentId
+                  )}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    backgroundColor: selectedDeploymentId === deployment.deploymentId ? '#007bff' : '#f8f9fa',
+                    color: selectedDeploymentId === deployment.deploymentId ? 'white' : '#007bff',
+                    border: '1px solid #007bff',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {selectedDeploymentId === deployment.deploymentId ? '로그 숨기기' : '로그 보기'}
+                </button>
+              </div>
+              
+              {/* 로그 컴포넌트 */}
+              {selectedDeploymentId === deployment.deploymentId && (
+                <div style={{ marginTop: '16px' }}>
+                  <DeploymentLogs deploymentId={deployment.deploymentId} />
+                </div>
+              )}
             </div>
           ))}
+        </div>
+      )}
+      
+      {/* React Query 도입 안내 */}
+      {deployments.length > 0 && (
+        <div style={{ 
+          marginTop: '20px', 
+          padding: '12px', 
+          background: '#e3f2fd', 
+          borderRadius: '6px', 
+          fontSize: '13px',
+          color: '#1565c0'
+        }}>
+          💡 <strong>개선 예정:</strong> React Query 도입으로 실시간 업데이트 및 캐싱 성능을 개선할 예정입니다.
         </div>
       )}
     </div>
