@@ -41,13 +41,11 @@ phases:
           echo "Found Dockerfile in parent directory"
         else
           echo "No Dockerfile found - creating default Dockerfile for Spring Boot..."
-          cat > Dockerfile <<'DOCKER'
-FROM openjdk:17-jre-slim
-WORKDIR /app
-COPY build/libs/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
-DOCKER
+          echo 'FROM eclipse-temurin:17-jre-alpine' > Dockerfile
+          echo 'WORKDIR /app' >> Dockerfile
+          echo 'COPY build/libs/*.jar app.jar' >> Dockerfile
+          echo 'EXPOSE 8080' >> Dockerfile
+          echo 'ENTRYPOINT ["java", "-jar", "app.jar"]' >> Dockerfile
           DOCKERFILE_PATH="Dockerfile"
           echo "Created default Dockerfile"
         fi
