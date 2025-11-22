@@ -177,6 +177,7 @@ resource "aws_iam_role_policy" "lambda" {
         Resource = aws_kms_key.ssm_secure_string.arn
       },
       # [ADDED] repo_inspector 람다를 호출할 수 있는 권한 추가
+      {
         Effect   = "Allow"
         Action   = "lambda:InvokeFunction"
         Resource = [
