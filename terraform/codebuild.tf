@@ -58,6 +58,20 @@ resource "aws_iam_role_policy" "codebuild" {
           "secretsmanager:GetSecretValue"
         ]
         Resource = "arn:aws:secretsmanager:${var.aws_region}:*:secret:whaleray/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters"
+        ],
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ],
+        Resource = aws_kms_key.ssm_secure_string.arn
       }
     ]
   })
@@ -88,8 +102,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "codebuild_cache" {
     }
   }
 }
-
-data "aws_caller_identity" "current" {}
 
 # Spring Boot CodeBuild 프로젝트
 resource "aws_codebuild_project" "spring_boot" {

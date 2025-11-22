@@ -4,6 +4,8 @@ phases:
     commands:
       - echo "Logging in to Amazon ECR..."
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
+      - echo "Restoring .env file from SSM if provided..."
+      - if [ -n "$DOTENV_BLOB_SSM_PATH" ]; then aws ssm get-parameter --name "$DOTENV_BLOB_SSM_PATH" --with-decryption --query Parameter.Value --output text > .env && echo "Successfully restored .env file."; else echo ".env file not provided, skipping."; fi
   build:
     commands:
       - echo "Build started for Node.js on `date`"
