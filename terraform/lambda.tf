@@ -589,6 +589,7 @@ resource "aws_lambda_function" "database" {
       NAMESPACE_ID         = aws_service_discovery_private_dns_namespace.whaleray.id
       SERVICE_DISCOVERY_ID = aws_service_discovery_service.app_services.id
       DOMAIN_NAME          = var.domain_name
+      ECS_TASK_ROLE_ARN    = aws_iam_role.ecs_task.arn
     }
   }
 }
