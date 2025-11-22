@@ -127,6 +127,16 @@ resource "aws_iam_role_policy" "lambda" {
       {
         Effect = "Allow"
         Action = [
+          "servicediscovery:CreateService",
+          "servicediscovery:GetService",
+          "servicediscovery:ListServices",
+          "servicediscovery:UpdateService"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "logs:GetLogEvents",
           "logs:FilterLogEvents",
           "logs:DescribeLogStreams"
