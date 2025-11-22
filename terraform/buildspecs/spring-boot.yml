@@ -8,13 +8,25 @@ phases:
     commands:
       - echo "Build started for Spring Boot on `date`"
       - |
+        if [ -n "$SOURCE_DIR" ]; then
+          echo "Changing to source directory: $SOURCE_DIR"
+          cd $SOURCE_DIR
+        fi
+      - |
         if [ -f "build.gradle" ]; then
           chmod +x gradlew
           ./gradlew build -x test --no-daemon
         fi
       - |
-        if [ ! -f "Dockerfile" ]; then
-          echo "Creating default Dockerfile for Spring Boot..."
+        DOCKERFILE_PATH=""
+        if [ -f "Dockerfile" ]; then
+          DOCKERFILE_PATH="./Dockerfile"
+          echo "Found Dockerfile in current directory"
+        elif [ -f "../Dockerfile" ]; then
+          DOCKERFILE_PATH="../Dockerfile"
+          echo "Found Dockerfile in parent directory"
+        else
+          echo "No Dockerfile found - creating default Dockerfile for Spring Boot..."
           cat > Dockerfile <<'DOCKER'
 FROM openjdk:17-jre-slim
 WORKDIR /app
@@ -22,8 +34,15 @@ COPY build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
 DOCKER
+          DOCKERFILE_PATH="./Dockerfile"
         fi
-      - docker build -t $ECR_IMAGE_URI .
+        echo "Using Dockerfile at: $DOCKERFILE_PATH"
+      - |
+        if [ -n "$SOURCE_DIR" ]; then
+          docker build -t $ECR_IMAGE_URI $SOURCE_DIR
+        else
+          docker build -t $ECR_IMAGE_URI .
+        fi
   post_build:
     commands:
       - docker push $ECR_IMAGE_URI
