@@ -357,3 +357,58 @@ resource "aws_apigatewayv2_route" "github_repositories" {
     replace_triggered_by  = [aws_apigatewayv2_integration.github_repositories.id]
   }
 }
+
+# ============================================
+# Database API Endpoints
+# ============================================
+
+resource "aws_apigatewayv2_integration" "database" {
+  api_id           = aws_apigatewayv2_api.main.id
+  integration_type = "AWS_PROXY"
+
+  connection_type    = "INTERNET"
+  description        = "Database Lambda Integration"
+  integration_method = "POST"
+  integration_uri    = aws_lambda_function.database.invoke_arn
+}
+
+# GET /db
+resource "aws_apigatewayv2_route" "get_db" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /db"
+  target    = "integrations/${aws_apigatewayv2_integration.database.id}"
+  authorizer_id = aws_apigatewayv2_authorizer.auth.id
+}
+
+# POST /db/createdb
+resource "aws_apigatewayv2_route" "create_db" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /db/createdb"
+  target    = "integrations/${aws_apigatewayv2_integration.database.id}"
+  authorizer_id = aws_apigatewayv2_authorizer.auth.id
+}
+
+# DELETE /db
+resource "aws_apigatewayv2_route" "delete_db" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "DELETE /db"
+  target    = "integrations/${aws_apigatewayv2_integration.database.id}"
+  authorizer_id = aws_apigatewayv2_authorizer.auth.id
+}
+
+# POST /db/reset-password
+resource "aws_apigatewayv2_route" "reset_password" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /db/reset-password"
+  target    = "integrations/${aws_apigatewayv2_integration.database.id}"
+  authorizer_id = aws_apigatewayv2_authorizer.auth.id
+}
+
+# Lambda Permission for API Gateway
+resource "aws_lambda_permission" "api_gw_database" {
+  statement_id  = "AllowExecutionFromAPIGatewayDatabase"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.database.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}

@@ -146,3 +146,31 @@ resource "aws_dynamodb_table" "installations" {
     Name = "${var.project_name}-installations"
   }
 }
+
+# WhalerayDatabase 테이블 - 사용자 DB 인스턴스 정보 저장
+resource "aws_dynamodb_table" "whaleray_database" {
+  name         = "${var.project_name}-database"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "databaseId"
+
+  attribute {
+    name = "databaseId"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  # GSI: 유저별 DB 조회 (유저당 1개 제한 체크용)
+  global_secondary_index {
+    name            = "userId-index"
+    hash_key        = "userId"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.project_name}-database"
+  }
+}

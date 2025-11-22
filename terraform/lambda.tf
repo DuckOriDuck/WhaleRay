@@ -128,6 +128,53 @@ resource "aws_iam_role_policy" "lambda" {
         Effect   = "Allow"
         Action   = "lambda:InvokeFunction"
         Resource = aws_lambda_function.repo_inspector.arn
+      },
+      # [ADDED] Database Feature Permissions
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          aws_dynamodb_table.whaleray_database.arn,
+          "${aws_dynamodb_table.whaleray_database.arn}/index/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:PutParameter",
+          "ssm:GetParameter",
+          "ssm:DeleteParameter"
+        ]
+        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/whaleray/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateVolume",
+          "ec2:DeleteVolume",
+          "ec2:DescribeVolumes",
+          "ec2:AttachVolume",
+          "ec2:DetachVolume"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "servicediscovery:RegisterInstance",
+          "servicediscovery:DeregisterInstance",
+          "servicediscovery:DiscoverInstances",
+          "servicediscovery:GetOperation",
+          "servicediscovery:ListInstances"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -477,6 +524,104 @@ resource "aws_lambda_function" "repo_inspector" {
       PROJECT_NAME               = var.project_name
       GITHUB_APP_PRIVATE_KEY_ARN = aws_secretsmanager_secret.github_app_private_key.arn
       GITHUB_APP_ID              = var.github_app_id
+    }
+  }
+}
+
+variable "service_discovery_namespace_id" {
+  description = "The ID of the Cloud Map namespace"
+  type        = string
+}
+# ============================================
+# Database Service Lambda (Python)
+# ============================================
+
+locals {
+  database_lambda_zip_path = "${path.module}/../build/database.zip"
+}
+
+resource "null_resource" "archive_database_lambda" {
+  depends_on = [null_resource.clean_lambda_pycache]
+
+  triggers = {
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/database", "**") : filesha1("${path.module}/../lambda/database/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/database ${local.database_lambda_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
+}
+
+resource "aws_lambda_function" "database" {
+  depends_on    = [null_resource.archive_database_lambda]
+  filename      = local.database_lambda_zip_path
+  function_name = "${var.project_name}-database"
+  role          = aws_iam_role.lambda.arn
+  handler       = "handler.handler"
+  runtime       = "python3.11"
+  timeout       = 60
+
+  layers = [
+    aws_lambda_layer_version.common_libs_layer.arn,
+    aws_lambda_layer_version.github_utils_layer.arn
+  ]
+
+  source_code_hash = try(filebase64sha256(local.database_lambda_zip_path), null)
+
+  environment {
+    variables = {
+      DATABASE_TABLE       = aws_dynamodb_table.whaleray_database.name
+      CLUSTER_NAME         = aws_ecs_cluster.main.name
+      TASK_DEFINITION_ARN  = aws_ecs_task_definition.database.arn
+      SUBNETS              = join(",", aws_subnet.private[*].id)
+      SECURITY_GROUPS      = aws_security_group.ecs_tasks.id
+      NAMESPACE_ID         = aws_service_discovery_private_dns_namespace.whaleray.id
+      SERVICE_DISCOVERY_ID = aws_service_discovery_service.app_services.id
+      DOMAIN_NAME          = var.domain_name
+    }
+  }
+}
+
+# ============================================
+# Database Event Listener Lambda
+# ============================================
+
+locals {
+  db_event_listener_zip_path = "${path.module}/../build/database_event_listener.zip"
+}
+
+resource "null_resource" "archive_db_event_listener" {
+  depends_on = [null_resource.clean_lambda_pycache]
+
+  triggers = {
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/database_event_listener", "**") : filesha1("${path.module}/../lambda/database_event_listener/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/database_event_listener ${local.db_event_listener_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
+}
+
+resource "aws_lambda_function" "database_event_listener" {
+  depends_on    = [null_resource.archive_db_event_listener]
+  filename      = local.db_event_listener_zip_path
+  function_name = "${var.project_name}-db-event-listener"
+  role          = aws_iam_role.lambda.arn
+  handler       = "handler.handle_event"
+  runtime       = "python3.11"
+  timeout       = 60
+
+  layers = [
+    aws_lambda_layer_version.common_libs_layer.arn
+  ]
+
+  source_code_hash = try(filebase64sha256(local.db_event_listener_zip_path), null)
+
+  environment {
+    variables = {
+      DATABASE_TABLE = aws_dynamodb_table.whaleray_database.name
     }
   }
 }
