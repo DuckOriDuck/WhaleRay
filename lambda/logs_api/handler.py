@@ -26,6 +26,7 @@ def handler(event, context):
         log_type = query_params.get('type', 'all')  # 'build', 'runtime', 'all'
         limit = int(query_params.get('limit', 100))
         next_token = query_params.get('nextToken')
+        last_event_time = query_params.get('lastEventTime')  # 증분 업데이트용
 
         # Deployments 테이블에서 배포 정보 조회
         response = deployments_table.get_item(Key={'deploymentId': deployment_id})
@@ -58,7 +59,8 @@ def handler(event, context):
                     log_group=deployment['codebuildLogGroup'],
                     log_stream=deployment.get('codebuildLogStream'),
                     limit=limit // 2 if log_type == 'all' else limit,
-                    next_token=next_token
+                    next_token=next_token,
+                    start_time=int(last_event_time) if last_event_time else None
                 )
                 log_events.extend([{
                     'timestamp': event['timestamp'],
@@ -75,7 +77,8 @@ def handler(event, context):
                     log_group=deployment['ecsLogGroup'],
                     log_stream_prefix=deployment.get('ecsLogStreamPrefix'),
                     limit=limit // 2 if log_type == 'all' else limit,
-                    next_token=next_token
+                    next_token=next_token,
+                    start_time=int(last_event_time) if last_event_time else None
                 )
                 log_events.extend([{
                     'timestamp': event['timestamp'],
@@ -88,6 +91,12 @@ def handler(event, context):
         # 시간순 정렬
         log_events.sort(key=lambda x: x['timestamp'])
 
+        # 응답할 로그 (최신 순으로 제한)
+        response_logs = log_events[-limit:] if len(log_events) > limit else log_events
+        
+        # 가장 최근 로그의 timestamp (다음 요청의 lastEventTime으로 사용)
+        latest_event_time = response_logs[-1]['timestamp'] if response_logs else None
+
         return {
             'statusCode': 200,
             'headers': {
@@ -97,8 +106,9 @@ def handler(event, context):
             'body': json.dumps({
                 'deploymentId': deployment_id,
                 'status': status,
-                'logs': log_events[-limit:],  # 최신 로그만
-                'hasMore': len(log_events) > limit
+                'logs': response_logs,
+                'hasMore': len(log_events) > limit,
+                'latestEventTime': latest_event_time  # 프론트엔드가 다음 요청에 사용
             })
         }
 
@@ -117,7 +127,7 @@ def handler(event, context):
         }
 
 
-def get_cloudwatch_logs(log_group, log_stream=None, log_stream_prefix=None, limit=100, next_token=None):
+def get_cloudwatch_logs(log_group, log_stream=None, log_stream_prefix=None, limit=100, next_token=None, start_time=None):
     """
     CloudWatch Logs에서 로그 가져오기
     """
@@ -132,6 +142,8 @@ def get_cloudwatch_logs(log_group, log_stream=None, log_stream_prefix=None, limi
             }
             if next_token:
                 params['nextToken'] = next_token
+            if start_time:
+                params['startTime'] = start_time
 
             response = logs.get_log_events(**params)
             return response
@@ -148,12 +160,16 @@ def get_cloudwatch_logs(log_group, log_stream=None, log_stream_prefix=None, limi
 
             all_events = []
             for stream in streams_response.get('logStreams', []):
-                stream_response = logs.get_log_events(
-                    logGroupName=log_group,
-                    logStreamName=stream['logStreamName'],
-                    limit=limit,
-                    startFromHead=False
-                )
+                stream_params = {
+                    'logGroupName': log_group,
+                    'logStreamName': stream['logStreamName'],
+                    'limit': limit,
+                    'startFromHead': False
+                }
+                if start_time:
+                    stream_params['startTime'] = start_time
+                    
+                stream_response = logs.get_log_events(**stream_params)
                 all_events.extend(stream_response.get('events', []))
 
             return {'events': all_events}
@@ -166,6 +182,8 @@ def get_cloudwatch_logs(log_group, log_stream=None, log_stream_prefix=None, limi
             }
             if next_token:
                 params['nextToken'] = next_token
+            if start_time:
+                params['startTime'] = start_time
 
             response = logs.filter_log_events(**params)
             return response
