@@ -115,10 +115,17 @@ def handler(event, context):
                 continue
 
             # 5. CodeBuild 프로젝트 실행
+            # 서브디렉토리 정보 추출
+            source_dir = "."
+            if ':' in framework:
+                source_dir = framework.split(':')[1]
+                
             env_vars = [
                 {'name': 'DEPLOYMENT_ID', 'value': deployment_id, 'type': 'PLAINTEXT'},
                 {'name': 'ECR_IMAGE_URI', 'value': f"{ECR_REPOSITORY_URL}:{deployment_id}", 'type': 'PLAINTEXT'},
-                {'name': 'DOTENV_BLOB_SSM_PATH', 'value': env_blob_ssm_path, 'type': 'PLAINTEXT'} # DOTENV_BLOB 경로 추가
+                {'name': 'DOTENV_BLOB_SSM_PATH', 'value': env_blob_ssm_path, 'type': 'PLAINTEXT'}, # DOTENV_BLOB 경로 추가
+                {'name': 'SOURCE_DIR', 'value': source_dir, 'type': 'PLAINTEXT'}, # 소스 디렉토리
+                {'name': 'BUILD_CONTEXT', 'value': source_dir, 'type': 'PLAINTEXT'} # 빌드 컨텍스트
             ]
             
             build_response = codebuild.start_build(
@@ -219,15 +226,24 @@ def detect_framework(repository_full_name: str, branch: str, github_token: str) 
             except json.JSONDecodeError:
                 print("Failed to parse package.json")
 
-    # 2. Spring Boot 확인 (build.gradle)
-    if check_file_exists("build.gradle"):
-        print("Found build.gradle - analyzing Spring Boot project")
-        gradle_content = get_file_content("build.gradle")
-        if gradle_content and 'org.springframework.boot' in gradle_content:
-            print("Spring Boot framework detected")
-            return "spring-boot"
-        elif gradle_content:
-            print("Gradle project found but not Spring Boot")
+    # 2. Spring Boot 확인 (build.gradle) - 서브디렉토리 지원
+    gradle_locations = [
+        "build.gradle",        # 루트
+        "backend/build.gradle", # 백엔드 서브디렉토리
+        "server/build.gradle",  # 서버 서브디렉토리
+        "api/build.gradle"      # API 서브디렉토리
+    ]
+    
+    for gradle_path in gradle_locations:
+        if check_file_exists(gradle_path):
+            print(f"Found {gradle_path} - analyzing Spring Boot project")
+            gradle_content = get_file_content(gradle_path)
+            if gradle_content and 'org.springframework.boot' in gradle_content:
+                source_dir = "/".join(gradle_path.split("/")[:-1]) if "/" in gradle_path else "."
+                print(f"Spring Boot framework detected in {source_dir}")
+                return f"spring-boot:{source_dir}"
+            elif gradle_content:
+                print(f"Gradle project found in {gradle_path} but not Spring Boot")
 
     # 3. .NET 확인
     for csproj_pattern in ["*.csproj", "*.sln"]:
@@ -245,6 +261,9 @@ def detect_framework(repository_full_name: str, branch: str, github_token: str) 
 
 def select_codebuild_project(framework: str) -> str:
     """감지된 프레임워크에 따라 적절한 CodeBuild 프로젝트를 반환"""
+    # Spring Boot 서브디렉토리 지원: spring-boot:backend → spring-boot
+    base_framework = framework.split(':')[0] if ':' in framework else framework
+    
     project_mapping = {
         'nodejs': f"{PROJECT_NAME}-nodejs",
         'nextjs': f"{PROJECT_NAME}-nextjs", 
@@ -252,4 +271,4 @@ def select_codebuild_project(framework: str) -> str:
         'dotnet': f"{PROJECT_NAME}-dotnet"
     }
     
-    return project_mapping.get(framework)
+    return project_mapping.get(base_framework)
