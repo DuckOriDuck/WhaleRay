@@ -164,7 +164,8 @@ resource "aws_iam_role_policy" "lambda" {
       {
         Effect = "Allow"
         Action = [
-          "ssm:PutParameter"
+          "ssm:PutParameter",
+          "ssm:AddTagsToResource"
         ]
         Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/*"
       },
@@ -176,10 +177,12 @@ resource "aws_iam_role_policy" "lambda" {
         Resource = aws_kms_key.ssm_secure_string.arn
       },
       # [ADDED] repo_inspector 람다를 호출할 수 있는 권한 추가
-      {
         Effect   = "Allow"
         Action   = "lambda:InvokeFunction"
-        Resource = aws_lambda_function.repo_inspector.arn
+        Resource = [
+          aws_lambda_function.repo_inspector.arn,
+          aws_lambda_function.env_builder.arn
+        ]
       },
       # [ADDED] Database Feature Permissions
       {
@@ -573,11 +576,54 @@ resource "aws_lambda_function" "repo_inspector" {
     variables = {
       DEPLOYMENTS_TABLE          = aws_dynamodb_table.deployments.name
       USERS_TABLE                = aws_dynamodb_table.users.name
-      ECR_REPOSITORY_URL         = aws_ecr_repository.app_repo.repository_url
-      PROJECT_NAME               = var.project_name
       GITHUB_APP_PRIVATE_KEY_ARN = aws_secretsmanager_secret.github_app_private_key.arn
       GITHUB_APP_ID              = var.github_app_id
-      SSM_KMS_KEY_ARN            = aws_kms_key.ssm_secure_string.arn
+      ENV_BUILDER_FUNCTION_NAME  = aws_lambda_function.env_builder.function_name
+    }
+  }
+}
+
+# --- Env Builder Lambda ---
+
+locals {
+  env_builder_lambda_zip_path = "${path.module}/../build/env_builder.zip"
+}
+
+resource "null_resource" "archive_env_builder_lambda" {
+  depends_on = []
+
+  triggers = {
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/env_builder", "**") : filesha1("${path.module}/../lambda/env_builder/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/clean_pycache.py && python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/env_builder ${local.env_builder_lambda_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
+}
+
+resource "aws_lambda_function" "env_builder" {
+  depends_on    = [null_resource.archive_env_builder_lambda]
+  filename      = local.env_builder_lambda_zip_path
+  function_name = "${var.project_name}-env-builder"
+  role          = aws_iam_role.lambda.arn
+  handler       = "handler.handler"
+  runtime       = "python3.11"
+  timeout       = 300
+
+  layers = [
+    aws_lambda_layer_version.common_libs_layer.arn,
+    aws_lambda_layer_version.github_utils_layer.arn
+  ]
+
+  source_code_hash = try(filebase64sha256(local.env_builder_lambda_zip_path), null)
+
+  environment {
+    variables = {
+      DEPLOYMENTS_TABLE  = aws_dynamodb_table.deployments.name
+      ECR_REPOSITORY_URL = aws_ecr_repository.app_repo.repository_url
+      PROJECT_NAME       = var.project_name
+      SSM_KMS_KEY_ARN    = aws_kms_key.ssm_secure_string.arn
     }
   }
 }
