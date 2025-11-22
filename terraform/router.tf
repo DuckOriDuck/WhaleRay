@@ -165,10 +165,9 @@ resource "aws_ecs_task_definition" "router" {
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        "awslogs-group"         = "/ecs/${var.project_name}-router"
+        "awslogs-group"         = aws_cloudwatch_log_group.ecs_router.name
         "awslogs-region"        = var.aws_region
         "awslogs-stream-prefix" = "router"
-        "awslogs-create-group"  = "true"
       }
     }
 

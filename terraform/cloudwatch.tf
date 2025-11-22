@@ -1,3 +1,14 @@
+# CloudWatch Log Groups for ECS Services
+resource "aws_cloudwatch_log_group" "ecs_router" {
+  name              = "/ecs/${var.project_name}-router"
+  retention_in_days = 7
+}
+
+resource "aws_cloudwatch_log_group" "ecs_services" {
+  name              = "/ecs/${var.project_name}-cluster"
+  retention_in_days = 7
+}
+
 # CloudWatch Log Groups for Lambda Functions
 resource "aws_cloudwatch_log_group" "lambda_deploy" {
   name              = "/aws/lambda/${aws_lambda_function.deploy.function_name}"

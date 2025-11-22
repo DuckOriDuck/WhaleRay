@@ -112,8 +112,7 @@ def handler(event, context):
                             # 로그 그룹을 중앙화하고, 스트림 접두사로 로그를 격리합니다.
                             'awslogs-group': f'/ecs/{CLUSTER_NAME}',
                             'awslogs-region': os.environ['AWS_REGION'],
-                            'awslogs-stream-prefix': deployment_id,
-                            'awslogs-create-group': 'true'
+                            'awslogs-stream-prefix': deployment_id
                         }
                     }
                 }
