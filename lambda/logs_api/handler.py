@@ -9,14 +9,45 @@ dynamodb = boto3.resource('dynamodb')
 DEPLOYMENTS_TABLE = os.environ['DEPLOYMENTS_TABLE']
 deployments_table = dynamodb.Table(DEPLOYMENTS_TABLE)
 
+# CORS 헤더
+cors_headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+}
+
 
 def handler(event, context):
     """
     배포 로그를 CloudWatch Logs에서 가져오는 Lambda 함수
     """
     try:
-        # JWT authorizer에서 userId 추출
-        user_id = event['requestContext']['authorizer']['jwt']['claims']['sub']
+        # JWT authorizer에서 userId 추출 (여러 방식 시도)
+        auth_ctx = event.get('requestContext', {}).get('authorizer', {}) or {}
+        
+        # 방법 1: claims.sub (github_oauth 방식)
+        user_id = None
+        if 'claims' in auth_ctx and auth_ctx['claims']:
+            user_id = auth_ctx['claims'].get('sub')
+        
+        # 방법 2: lambda.userId (deployments_api 방식)
+        if not user_id:
+            lambda_ctx = auth_ctx.get('lambda', {}) or {}
+            user_id = lambda_ctx.get('userId') or lambda_ctx.get('sub')
+        
+        # 방법 3: 직접 userId 
+        if not user_id:
+            user_id = auth_ctx.get('userId')
+        
+        print(f"Auth context: {auth_ctx}")
+        print(f"Extracted user_id: {user_id}")
+        
+        if not user_id:
+            return {
+                'statusCode': 401,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'Unauthorized: No user ID found'})
+            }
 
         # Path parameter에서 deploymentId 추출
         deployment_id = event['pathParameters']['deploymentId']
@@ -51,6 +82,12 @@ def handler(event, context):
         # 배포 상태에 따라 로그 소스 결정
         status = deployment.get('status')
         log_events = []
+
+        # 빌드 실패시 100줄 제한 적용
+        is_build_failed = status in ['FAILED', 'STOPPED', 'FAULT', 'TIMEOUT']
+        if is_build_failed and limit > 100:
+            limit = 100
+            print(f"Build failed - limiting logs to {limit} lines")
 
         # 로그 타입별 제한 설정 (성능 최적화)
         build_limit = limit // 2 if log_type == 'all' else limit
@@ -162,19 +199,21 @@ def get_cloudwatch_logs(log_group, log_stream=None, log_stream_prefix=None, limi
             return response
 
         elif log_stream_prefix:
-            # 로그 스트림 목록 조회 (최신 스트림만)
+            # 로그 스트림 목록 조회 (prefix와 orderBy는 함께 사용 불가)
             streams_response = logs.describe_log_streams(
                 logGroupName=log_group,
                 logStreamNamePrefix=log_stream_prefix,
-                orderBy='LastEventTime',
-                descending=True,
-                limit=3  # 최근 3개 스트림만 조회하여 성능 향상
+                limit=10  # prefix 사용시 orderBy 사용 불가, limit만 사용
             )
 
             all_events = []
             total_fetched = 0
             
-            for stream in streams_response.get('logStreams', []):
+            # 스트림을 lastEventTime 기준으로 정렬 (최신 순)
+            log_streams = streams_response.get('logStreams', [])
+            log_streams.sort(key=lambda x: x.get('lastEventTime', 0), reverse=True)
+            
+            for stream in log_streams:
                 if total_fetched >= limit:
                     break  # 이미 충분한 로그를 가져왔으면 중단
                     
