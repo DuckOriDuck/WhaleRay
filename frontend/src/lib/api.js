@@ -157,6 +157,33 @@ export async function createDeployment(repositoryFullName, branch) {
 }
 
 /**
+ * 배포 로그 조회
+ */
+export async function getDeploymentLogs(deploymentId, options = {}) {
+  const headers = getAuthHeaders()
+  
+  // Query parameters 생성
+  const params = new URLSearchParams()
+  if (options.type) params.append('type', options.type) // 'build', 'runtime', 'all'
+  if (options.limit) params.append('limit', options.limit.toString())
+  if (options.lastEventTime) params.append('lastEventTime', options.lastEventTime.toString())
+  
+  const url = `${API_BASE_URL}/deployments/${deploymentId}/logs${params.toString() ? '?' + params.toString() : ''}`
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    headers
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to fetch logs')
+  }
+
+  return response.json()
+}
+
+/**
  * GitHub App 설치 상태 조회 (deprecated)
  */
 export async function getGitHubInstallationStatus() {
