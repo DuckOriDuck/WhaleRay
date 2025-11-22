@@ -259,3 +259,27 @@ resource "aws_appautoscaling_policy" "router_cpu" {
     scale_out_cooldown = 60   # Wait 1 minute before scaling out again
   }
 }
+
+# ============================================
+# ALB Listener Rule for DB routing
+# ============================================
+resource "aws_lb_listener_rule" "db_domain" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 110 # Lower priority than service domain rule (100) or higher? 
+  # Let's use 110 to avoid conflict if needed, but they are distinct domains.
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.router.arn
+  }
+
+  condition {
+    host_header {
+      values = ["${var.db_domain_prefix}.${var.domain_name}"]
+    }
+  }
+
+  tags = {
+    Name = "${var.project_name}-db-domain-rule"
+  }
+}

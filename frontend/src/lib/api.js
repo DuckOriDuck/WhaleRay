@@ -197,3 +197,82 @@ export async function getGitHubInstallationStatus() {
   // 이제 getMe() 사용
   return getMe()
 }
+
+/**
+ * GET /db - 데이터베이스 정보 조회
+ */
+export async function getDatabase() {
+  const headers = getAuthHeaders()
+
+  const response = await fetch(`${API_BASE_URL}/db`, {
+    method: 'GET',
+    headers
+  })
+
+  if (response.status === 404) {
+    return null
+  }
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch database info')
+  }
+
+  return response.json()
+}
+
+/**
+ * POST /db/createdb - 데이터베이스 생성
+ */
+export async function createDatabase() {
+  const headers = getAuthHeaders()
+
+  const response = await fetch(`${API_BASE_URL}/db/createdb`, {
+    method: 'POST',
+    headers
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.message || 'Failed to create database')
+  }
+
+  return response.json()
+}
+
+/**
+ * DELETE /db - 데이터베이스 삭제
+ */
+export async function deleteDatabase() {
+  const headers = getAuthHeaders()
+
+  const response = await fetch(`${API_BASE_URL}/db`, {
+    method: 'DELETE',
+    headers
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.message || 'Failed to delete database')
+  }
+
+  return response.json()
+}
+
+/**
+ * POST /db/reset-password - 비밀번호 초기화
+ */
+export async function resetDatabasePassword() {
+  const headers = getAuthHeaders()
+
+  const response = await fetch(`${API_BASE_URL}/db/reset-password`, {
+    method: 'POST',
+    headers
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.message || 'Failed to reset password')
+  }
+
+  return response.json()
+}

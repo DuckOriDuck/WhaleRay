@@ -91,7 +91,10 @@ resource "aws_acm_certificate" "alb" {
   validation_method = "DNS"
 
   subject_alternative_names = [
-    "*.${var.service_domain_prefix}.${var.domain_name}"
+    "${var.service_domain_prefix}.${var.domain_name}",
+    "*.${var.service_domain_prefix}.${var.domain_name}",
+    "${var.db_domain_prefix}.${var.domain_name}",
+    "*.${var.db_domain_prefix}.${var.domain_name}"
   ]
 
   lifecycle {
@@ -131,6 +134,18 @@ resource "aws_acm_certificate_validation" "alb" {
 resource "aws_route53_record" "service" {
   zone_id = data.aws_route53_zone.main.zone_id
   name    = "${var.service_domain_prefix}.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
+}
+# DB Subdomain Record
+resource "aws_route53_record" "db" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "${var.db_domain_prefix}.${var.domain_name}"
   type    = "A"
 
   alias {

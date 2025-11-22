@@ -90,9 +90,33 @@ resource "aws_iam_role" "ecs_task" {
       Action = "sts:AssumeRole"
       Effect = "Allow"
       Principal = {
-        Service = "ecs-tasks.amazonaws.com"
+        Service = ["ecs-tasks.amazonaws.com", "ecs.amazonaws.com"]
       }
     }]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_task_ebs" {
+  name = "${var.project_name}-ecs-task-ebs"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateVolume",
+          "ec2:AttachVolume",
+          "ec2:DeleteVolume",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeVolumeStatus",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:CreateTags"
+        ]
+        Resource = "*"
+      }
+    ]
   })
 }
 
@@ -118,4 +142,93 @@ resource "aws_security_group" "ecs_tasks" {
   tags = {
     Name = "${var.project_name}-ecs-tasks"
   }
+}
+
+# ============================================
+# Database Task Definition (Postgres + pgAdmin)
+# ============================================
+
+resource "aws_ecs_task_definition" "database" {
+  family                   = "${var.project_name}-database"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "1024" # 1 vCPU
+  memory                   = "2048" # 2 GB
+
+  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "postgres"
+      image     = "postgres:15"
+      essential = true
+      portMappings = [
+        {
+          containerPort = 5432
+          protocol      = "tcp"
+        }
+      ]
+      environment = [
+        {
+          name  = "POSTGRES_DB"
+          value = "whaleray"
+        }
+        # POSTGRES_USER and POSTGRES_PASSWORD will be injected by ECS RunTask overrides
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/ecs/${var.project_name}-database"
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "postgres"
+          "awslogs-create-group"  = "true"
+        }
+      }
+      # Mount point for EBS volume (if attached)
+      # mountPoints = [
+      #   {
+      #     sourceVolume  = "db-storage"
+      #     containerPath = "/var/lib/postgresql/data"
+      #     readOnly      = false
+      #   }
+      # ]
+    },
+    {
+      name      = "pgadmin"
+      image     = "dpage/pgadmin4"
+      essential = true
+      portMappings = [
+        {
+          containerPort = 80
+          protocol      = "tcp"
+        }
+      ]
+      environment = [
+        {
+          name  = "PGADMIN_DEFAULT_EMAIL"
+          value = "admin@whaleray.local"
+        },
+        {
+          name  = "PGADMIN_DEFAULT_PASSWORD"
+          value = "admin" # Should be changed or managed better in prod
+        },
+        {
+          name  = "PGADMIN_LISTEN_PORT"
+          value = "80"
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/ecs/${var.project_name}-database"
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "pgadmin"
+          "awslogs-create-group"  = "true"
+        }
+      }
+    }
+  ])
+
+  # Volume configuration will be handled dynamically or via attachment
 }
