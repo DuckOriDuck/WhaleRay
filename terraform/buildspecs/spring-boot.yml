@@ -7,20 +7,34 @@ phases:
   build:
     commands:
       - echo "Build started for Spring Boot on `date`"
+      - echo "Current directory:" && pwd && ls -la
       - |
+        BUILD_DIR="."
         if [ -n "$SOURCE_DIR" ]; then
-          echo "Changing to source directory: $SOURCE_DIR"
+          echo "Source directory specified: $SOURCE_DIR"
+          BUILD_DIR="$SOURCE_DIR"
           cd $SOURCE_DIR
+          echo "Changed to directory: $SOURCE_DIR" && pwd && ls -la
         fi
       - |
+        echo "Building Spring Boot application..."
         if [ -f "build.gradle" ]; then
-          chmod +x gradlew
-          ./gradlew build -x test --no-daemon
+          echo "Found build.gradle, building with Gradle"
+          chmod +x gradlew 2>/dev/null || echo "No gradlew found, using system gradle"
+          if [ -f "gradlew" ]; then
+            ./gradlew build -x test --no-daemon
+          else
+            gradle build -x test
+          fi
+        else
+          echo "No build.gradle found in current directory"
+          exit 1
         fi
       - |
+        echo "Checking for Dockerfile..."
         DOCKERFILE_PATH=""
         if [ -f "Dockerfile" ]; then
-          DOCKERFILE_PATH="./Dockerfile"
+          DOCKERFILE_PATH="Dockerfile"
           echo "Found Dockerfile in current directory"
         elif [ -f "../Dockerfile" ]; then
           DOCKERFILE_PATH="../Dockerfile"
@@ -34,14 +48,19 @@ COPY build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
 DOCKER
-          DOCKERFILE_PATH="./Dockerfile"
+          DOCKERFILE_PATH="Dockerfile"
+          echo "Created default Dockerfile"
         fi
         echo "Using Dockerfile at: $DOCKERFILE_PATH"
       - |
+        echo "Building Docker image..."
         if [ -n "$SOURCE_DIR" ]; then
-          docker build -t $ECR_IMAGE_URI $SOURCE_DIR
+          echo "Building from subdirectory context: $SOURCE_DIR"
+          cd $CODEBUILD_SRC_DIR
+          docker build -f $SOURCE_DIR/$DOCKERFILE_PATH -t $ECR_IMAGE_URI $SOURCE_DIR
         else
-          docker build -t $ECR_IMAGE_URI .
+          echo "Building from root directory"
+          docker build -f $DOCKERFILE_PATH -t $ECR_IMAGE_URI .
         fi
   post_build:
     commands:
