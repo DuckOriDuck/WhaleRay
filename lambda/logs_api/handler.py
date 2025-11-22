@@ -52,39 +52,52 @@ def handler(event, context):
         status = deployment.get('status')
         log_events = []
 
-        # CodeBuild 로그 (BUILDING 상태일 때)
+        # 로그 타입별 제한 설정 (성능 최적화)
+        build_limit = limit // 2 if log_type == 'all' else limit
+        runtime_limit = limit // 2 if log_type == 'all' else limit
+
+        # CodeBuild 로그 (빌드 중이거나 빌드 로그가 요청된 경우)
         if log_type in ['build', 'all'] and 'codebuildLogGroup' in deployment:
             try:
+                print(f"Fetching CodeBuild logs from {deployment['codebuildLogGroup']}")
                 build_logs = get_cloudwatch_logs(
                     log_group=deployment['codebuildLogGroup'],
                     log_stream=deployment.get('codebuildLogStream'),
-                    limit=limit // 2 if log_type == 'all' else limit,
+                    limit=build_limit,
                     next_token=next_token,
                     start_time=int(last_event_time) if last_event_time else None
                 )
-                log_events.extend([{
+                build_events = [{
                     'timestamp': event['timestamp'],
                     'message': event['message'],
                     'source': 'build'
-                } for event in build_logs.get('events', [])])
+                } for event in build_logs.get('events', [])]
+                log_events.extend(build_events)
+                print(f"Fetched {len(build_events)} build log events")
             except Exception as e:
                 print(f"Failed to fetch build logs: {e}")
 
-        # ECS 로그 (RUNNING 상태일 때)
+        # ECS 로그 (실행 중이거나 런타임 로그가 요청된 경우)
         if log_type in ['runtime', 'all'] and 'ecsLogGroup' in deployment:
             try:
+                # ECS 로그 스트림 prefix는 deployment_id
+                log_stream_prefix = deployment_id
+                print(f"Fetching ECS logs from {deployment['ecsLogGroup']} with prefix {log_stream_prefix}")
+                
                 ecs_logs = get_cloudwatch_logs(
                     log_group=deployment['ecsLogGroup'],
-                    log_stream_prefix=deployment.get('ecsLogStreamPrefix'),
-                    limit=limit // 2 if log_type == 'all' else limit,
+                    log_stream_prefix=log_stream_prefix,
+                    limit=runtime_limit,
                     next_token=next_token,
                     start_time=int(last_event_time) if last_event_time else None
                 )
-                log_events.extend([{
+                runtime_events = [{
                     'timestamp': event['timestamp'],
                     'message': event['message'],
                     'source': 'runtime'
-                } for event in ecs_logs.get('events', [])])
+                } for event in ecs_logs.get('events', [])]
+                log_events.extend(runtime_events)
+                print(f"Fetched {len(runtime_events)} runtime log events")
             except Exception as e:
                 print(f"Failed to fetch ECS logs: {e}")
 
@@ -149,28 +162,39 @@ def get_cloudwatch_logs(log_group, log_stream=None, log_stream_prefix=None, limi
             return response
 
         elif log_stream_prefix:
-            # 로그 스트림 목록 조회
+            # 로그 스트림 목록 조회 (최신 스트림만)
             streams_response = logs.describe_log_streams(
                 logGroupName=log_group,
                 logStreamNamePrefix=log_stream_prefix,
                 orderBy='LastEventTime',
                 descending=True,
-                limit=5
+                limit=3  # 최근 3개 스트림만 조회하여 성능 향상
             )
 
             all_events = []
+            total_fetched = 0
+            
             for stream in streams_response.get('logStreams', []):
+                if total_fetched >= limit:
+                    break  # 이미 충분한 로그를 가져왔으면 중단
+                    
                 stream_params = {
                     'logGroupName': log_group,
                     'logStreamName': stream['logStreamName'],
-                    'limit': limit,
+                    'limit': min(limit - total_fetched, 50),  # 스트림당 최대 50개로 제한
                     'startFromHead': False
                 }
                 if start_time:
                     stream_params['startTime'] = start_time
-                    
-                stream_response = logs.get_log_events(**stream_params)
-                all_events.extend(stream_response.get('events', []))
+                
+                try:
+                    stream_response = logs.get_log_events(**stream_params)
+                    events = stream_response.get('events', [])
+                    all_events.extend(events)
+                    total_fetched += len(events)
+                except Exception as stream_error:
+                    print(f"Failed to fetch from stream {stream['logStreamName']}: {stream_error}")
+                    continue
 
             return {'events': all_events}
 
