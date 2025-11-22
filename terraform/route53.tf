@@ -91,7 +91,7 @@ resource "aws_acm_certificate" "alb" {
   validation_method = "DNS"
 
   subject_alternative_names = [
-    "${var.service_domain_prefix}.${var.domain_name}"
+    "${var.service_domain_prefix}.${var.domain_name}",
     "*.${var.service_domain_prefix}.${var.domain_name}",
     "${var.db_domain_prefix}.${var.domain_name}",
     "*.${var.db_domain_prefix}.${var.domain_name}"

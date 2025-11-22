@@ -82,9 +82,6 @@ resource "aws_iam_role_policy" "lambda_auth" {
   })
 }
 
-# Lambda 패키징 시 개별적으로 cleanup 실행하도록 변경
-# (공통 cleanup 리소스 제거로 순환 의존성 해결)
-
 resource "null_resource" "auth_lambda_dependencies" {
   # Re-run when requirements change
   triggers = {
@@ -134,6 +131,7 @@ locals {
 
 resource "null_resource" "archive_auth_lambda" {
   depends_on = [
+    null_resource.clean_lambda_pycache,
     null_resource.auth_lambda_dependencies
   ]
 
@@ -142,7 +140,7 @@ resource "null_resource" "archive_auth_lambda" {
   }
 
   provisioner "local-exec" {
-    command     = "python3 ${path.module}/../lambda/clean_pycache.py && python3 ${path.module}/../lambda/create_zip.py ${path.module}/../build/auth_package ${local.auth_lambda_zip_path}"
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../build/auth_package ${local.auth_lambda_zip_path}"
     interpreter = ["/bin/bash", "-c"]
   }
 }

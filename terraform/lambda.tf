@@ -1,3 +1,16 @@
+# Lambda 패키징 전 cleanup (전체 lambda 폴더 - 크로스 플랫폼 지원)
+# 이 resource는 모든 Lambda 패키징에서 공통으로 사용됩니다
+resource "null_resource" "clean_lambda_pycache" {
+  triggers = {
+    always_run = timestamp()
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ../lambda/clean_pycache.py"
+    working_dir = path.module
+  }
+}
+
 resource "aws_iam_role" "lambda" {
   name = "${var.project_name}-lambda-role"
 
@@ -91,9 +104,12 @@ resource "aws_iam_role_policy" "lambda" {
         Effect = "Allow"
         Action = [
           "ecs:RegisterTaskDefinition",
+          "ecs:DescribeTaskDefinition",
           "ecs:DescribeServices",
           "ecs:CreateService",
-          "ecs:UpdateService"
+          "ecs:UpdateService",
+          "ecs:DeleteService",
+          "ecs:TagResource"
         ]
         Resource = "*"
       },
@@ -103,7 +119,8 @@ resource "aws_iam_role_policy" "lambda" {
           "servicediscovery:CreateService",
           "servicediscovery:GetService",
           "servicediscovery:ListServices",
-          "servicediscovery:UpdateService"
+          "servicediscovery:UpdateService",
+          "servicediscovery:DeleteService"
         ]
         Resource = "*"
       },
@@ -186,7 +203,8 @@ resource "aws_iam_role_policy" "lambda" {
           "ec2:DeleteVolume",
           "ec2:DescribeVolumes",
           "ec2:AttachVolume",
-          "ec2:DetachVolume"
+          "ec2:DetachVolume",
+          "ec2:CreateTags"
         ]
         Resource = "*"
       },
@@ -554,10 +572,7 @@ resource "aws_lambda_function" "repo_inspector" {
   }
 }
 
-variable "service_discovery_namespace_id" {
-  description = "The ID of the Cloud Map namespace"
-  type        = string
-}
+
 # ============================================
 # Database Service Lambda (Python)
 # ============================================
@@ -597,15 +612,14 @@ resource "aws_lambda_function" "database" {
 
   environment {
     variables = {
-      DATABASE_TABLE       = aws_dynamodb_table.whaleray_database.name
-      CLUSTER_NAME         = aws_ecs_cluster.main.name
-      TASK_DEFINITION_ARN  = aws_ecs_task_definition.database.arn
-      SUBNETS              = join(",", aws_subnet.private[*].id)
-      SECURITY_GROUPS      = aws_security_group.ecs_tasks.id
-      NAMESPACE_ID         = aws_service_discovery_private_dns_namespace.whaleray.id
-      SERVICE_DISCOVERY_ID = aws_service_discovery_service.app_services.id
-      DOMAIN_NAME          = var.domain_name
-      ECS_TASK_ROLE_ARN    = aws_iam_role.ecs_task.arn
+      DATABASE_TABLE      = aws_dynamodb_table.whaleray_database.name
+      CLUSTER_NAME        = aws_ecs_cluster.main.name
+      TASK_DEFINITION_ARN = aws_ecs_task_definition.database.arn
+      SUBNETS             = join(",", aws_subnet.private[*].id)
+      SECURITY_GROUPS     = aws_security_group.ecs_tasks.id
+      NAMESPACE_ID        = aws_service_discovery_private_dns_namespace.whaleray.id
+      DOMAIN_NAME         = var.domain_name
+      ECS_TASK_ROLE_ARN   = aws_iam_role.ecs_task.arn
     }
   }
 }

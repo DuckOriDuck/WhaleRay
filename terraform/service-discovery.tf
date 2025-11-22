@@ -28,10 +28,20 @@ resource "aws_service_discovery_service" "app_services" {
 
     routing_policy = "MULTIVALUE"
   }
+}
 
-  # ECS가 서비스 상태를 기반으로 헬스체크를 관리하도록 설정
-  health_check_custom_config {
-    failure_threshold = 1
+resource "aws_service_discovery_service" "db_services" {
+  name = "db"
+
+  dns_config {
+    namespace_id = aws_service_discovery_private_dns_namespace.whaleray.id
+
+    dns_records {
+      ttl  = 10
+      type = "A"
+    }
+
+    routing_policy = "MULTIVALUE"
   }
 }
 

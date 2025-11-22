@@ -90,9 +90,33 @@ resource "aws_iam_role" "ecs_task" {
       Action = "sts:AssumeRole"
       Effect = "Allow"
       Principal = {
-        Service = "ecs-tasks.amazonaws.com"
+        Service = ["ecs-tasks.amazonaws.com", "ecs.amazonaws.com"]
       }
     }]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_task_ebs" {
+  name = "${var.project_name}-ecs-task-ebs"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateVolume",
+          "ec2:AttachVolume",
+          "ec2:DeleteVolume",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeVolumeStatus",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:CreateTags"
+        ]
+        Resource = "*"
+      }
+    ]
   })
 }
 
@@ -136,8 +160,8 @@ resource "aws_ecs_task_definition" "database" {
 
   container_definitions = jsonencode([
     {
-      name  = "postgres"
-      image = "postgres:15"
+      name      = "postgres"
+      image     = "postgres:15"
       essential = true
       portMappings = [
         {
@@ -171,8 +195,8 @@ resource "aws_ecs_task_definition" "database" {
       # ]
     },
     {
-      name  = "pgadmin"
-      image = "dpage/pgadmin4"
+      name      = "pgadmin"
+      image     = "dpage/pgadmin4"
       essential = true
       portMappings = [
         {

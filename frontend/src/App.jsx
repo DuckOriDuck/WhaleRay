@@ -4,6 +4,7 @@ import { getMe, getGitHubRepositories } from './lib/api'
 import ServiceList from './components/ServiceList'
 import DeployForm from './components/DeployForm'
 import DeploymentHistory from './components/DeploymentHistory'
+import DatabaseManager from './components/DatabaseManager'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -21,6 +22,7 @@ function App() {
   // Refs for child components refresh functions
   const serviceListRefreshRef = useRef(null)
   const deploymentHistoryRefreshRef = useRef(null)
+  const databaseManagerRefreshRef = useRef(null)
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
@@ -100,6 +102,8 @@ function App() {
         await loadRepositories()
       } else if (activeTab === 'history' && deploymentHistoryRefreshRef.current) {
         await deploymentHistoryRefreshRef.current()
+      } else if (activeTab === 'database' && databaseManagerRefreshRef.current) {
+        await databaseManagerRefreshRef.current()
       }
     } finally {
       setRefreshing(false)
@@ -331,6 +335,20 @@ function App() {
               >
                 배포 히스토리
               </button>
+              <button
+                onClick={() => setActiveTab('database')}
+                style={{
+                  padding: '12px 24px',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'database' ? '2px solid #1a73e8' : '2px solid transparent',
+                  color: activeTab === 'database' ? '#1a73e8' : '#666',
+                  fontWeight: activeTab === 'database' ? '600' : '400',
+                  cursor: 'pointer'
+                }}
+              >
+                데이터베이스
+              </button>
             </div>
 
             {/* 공통 액션 버튼들 */}
@@ -421,6 +439,9 @@ function App() {
           <DeploymentHistory
             onRefreshReady={(refreshFn) => { deploymentHistoryRefreshRef.current = refreshFn }}
           />
+        )}
+        {activeTab === 'database' && (
+          <DatabaseManager ref={databaseManagerRefreshRef} />
         )}
       </div>
     </div>

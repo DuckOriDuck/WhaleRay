@@ -18,7 +18,9 @@ CLUSTER_NAME = os.environ['CLUSTER_NAME']
 TASK_DEFINITION_ARN = os.environ['TASK_DEFINITION_ARN']
 SUBNETS = os.environ['SUBNETS'].split(',')
 SECURITY_GROUPS = [os.environ['SECURITY_GROUPS']]
-SERVICE_DISCOVERY_ID = os.environ['SERVICE_DISCOVERY_ID']
+NAMESPACE_ID = os.environ['NAMESPACE_ID']
+DB_SERVICE_ARN = os.environ['DB_SERVICE_ARN']
+
 DOMAIN_NAME = os.environ['DOMAIN_NAME']
 
 table = dynamodb.Table(DATABASE_TABLE)
@@ -74,9 +76,9 @@ def get_database(user_id):
                     desired_count = service['desiredCount']
                     
                     if running_count == desired_count and running_count > 0:
-                        current_state = 'RUNNING'
+                        current_state = 'AVAILABLE'
                     elif running_count < desired_count:
-                        current_state = 'PROVISIONING' # or STARTING
+                        current_state = 'CREATING' # Was PROVISIONING
                     elif desired_count == 0:
                         current_state = 'STOPPED'
                 else:
@@ -86,6 +88,19 @@ def get_database(user_id):
             except ClientError as e:
                 print(f"Error checking ECS service state: {e}")
                 # Keep existing state or set to UNKNOWN
+
+        # Update DynamoDB if state changed
+        if current_state != db['dbState']:
+            print(f"Updating dbState from {db['dbState']} to {current_state}")
+            try:
+                table.update_item(
+                    Key={'databaseId': db['databaseId']},
+                    UpdateExpression="set dbState = :s",
+                    ExpressionAttributeValues={':s': current_state}
+                )
+                db['dbState'] = current_state
+            except ClientError as e:
+                print(f"Error updating DynamoDB state: {e}")
         
         return {
             'databaseId': db['databaseId'],
@@ -115,8 +130,7 @@ def create_database(user_id):
     print(f"Generated password for {username}")
     
     # 1.5. Select Subnet and AZ
-    # We need to pick a subnet and create the volume in its AZ
-    # Then force the task to run in that subnet
+    # We need to pick a subnet for the task
     selected_subnet_id = SUBNETS[0] # Simple selection for now
     try:
         subnet_info = ec2.describe_subnets(SubnetIds=[selected_subnet_id])['Subnets'][0]
@@ -125,34 +139,7 @@ def create_database(user_id):
         print(f"Error describing subnet: {e}")
         return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to determine availability zone'})}
 
-    # 2. Create EBS Volume
-    volume_id = None
-    try:
-        vol_resp = ec2.create_volume(
-            AvailabilityZone=availability_zone,
-            Size=1, # 1GB
-            VolumeType='gp3',
-            TagSpecifications=[{
-                'ResourceType': 'volume',
-                'Tags': [
-                    {'Key': 'Name', 'Value': f"whaleray-db-{database_id}"},
-                    {'Key': 'databaseId', 'Value': database_id},
-                    {'Key': 'userId', 'Value': user_id}
-                ]
-            }]
-        )
-        volume_id = vol_resp['VolumeId']
-        print(f"Created volume {volume_id} in {availability_zone}")
-        
-        # Wait for volume to be available
-        waiter = ec2.get_waiter('volume_available')
-        waiter.wait(VolumeIds=[volume_id])
-        
-    except ClientError as e:
-        print(f"Error creating volume: {e}")
-        return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to create storage volume'})}
-
-    # 3. Save Credentials to SSM
+    # 2. Save Credentials to SSM
     ssm_param_name = f"/whaleray/db/{database_id}/password"
     try:
         ssm.put_parameter(
@@ -164,12 +151,9 @@ def create_database(user_id):
         print(f"Saved password to SSM: {ssm_param_name}")
     except ClientError as e:
         print(f"Error saving to SSM: {e}")
-        # Rollback volume
-        if volume_id:
-             ec2.delete_volume(VolumeId=volume_id)
         return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to generate credentials'})}
 
-    # 4. Save Metadata to DynamoDB
+    # 3. Save Metadata to DynamoDB
     timestamp = int(time.time())
     item = {
         'databaseId': database_id,
@@ -177,7 +161,6 @@ def create_database(user_id):
         'dbState': 'CREATING',
         'username': username,
         'passwordParam': ssm_param_name,
-        'volumeId': volume_id,
         'availabilityZone': availability_zone,
         'subnetId': selected_subnet_id,
         'createdAt': timestamp
@@ -224,10 +207,8 @@ def create_database(user_id):
         # Check if volume already exists (it shouldn't in base, but good to be safe)
         if not any(v['name'] == 'db-storage' for v in volumes):
             volumes.append({
-                'name': 'db-storage'
-                # For Fargate EBS, we don't specify host/dockerVolumeConfiguration here usually?
-                # Actually, for Fargate EBS attachment at Service level, the TD volume is just a name.
-                # "You specify the volume name in the task definition and then configure the volume details when you run the task or create the service."
+                'name': 'db-storage',
+                'configuredAtLaunch': True  # Required for Fargate EBS volumes
             })
 
         new_td_resp = ecs.register_task_definition(
@@ -246,7 +227,6 @@ def create_database(user_id):
     except ClientError as e:
         print(f"Error registering TD: {e}")
         # Rollback
-        if volume_id: ec2.delete_volume(VolumeId=volume_id)
         ssm.delete_parameter(Name=ssm_param_name)
         table.delete_item(Key={'databaseId': database_id})
         return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to register task definition'})}
@@ -267,7 +247,6 @@ def create_database(user_id):
     except ClientError as e:
         print(f"Error creating Cloud Map service: {e}")
         # Rollback
-        if volume_id: ec2.delete_volume(VolumeId=volume_id)
         ssm.delete_parameter(Name=ssm_param_name)
         table.delete_item(Key={'databaseId': database_id})
         return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to create service discovery'})}
@@ -299,12 +278,11 @@ def create_database(user_id):
             volumeConfigurations=[{
                 'name': 'db-storage',
                 'managedEBSVolume': {
-                    'roleArn': os.environ['ECS_TASK_ROLE_ARN'], # Need to pass this env var
-                    'volumeId': volume_id,
+                    'roleArn': os.environ['ECS_TASK_ROLE_ARN'],
                     'volumeType': 'gp3',
-                    'size': 1,
-                    'encrypted': True
-                    # 'filesystemType': 'ext4' # Default
+                    'sizeInGiB': 1,
+                    'encrypted': True,
+                    'filesystemType': 'ext4'
                 }
             }]
 
@@ -326,8 +304,6 @@ def create_database(user_id):
         # Rollback
         table.delete_item(Key={'databaseId': database_id})
         ssm.delete_parameter(Name=ssm_param_name)
-
-        if volume_id: ec2.delete_volume(VolumeId=volume_id)
         # Clean up Cloud Map?
 
         return {'statusCode': 500, 'body': json.dumps({'message': 'Failed to start database service'})}
@@ -390,33 +366,8 @@ def delete_database(user_id):
     # 5. Delete DynamoDB Item
     table.delete_item(Key={'databaseId': database_id})
 
-    # 6. Delete EBS Volume (if recorded)
-
-    # Note: ECS Service deletion might detach it, but we need to delete it explicitly
-    # unless we set deleteOnTermination (which we didn't/couldn't easily for dynamic volumes)
-    if 'volumeId' in db_item:
-        try:
-            # Wait for volume to be available (detached) before deleting?
-            # Service deletion takes time. We might need to wait or retry.
-            # For now, just try to delete. If attached, it will fail.
-            # Ideally, we should poll.
-            
-            print(f"Attempting to delete volume {db_item['volumeId']}")
-            # Simple retry loop
-            for i in range(5):
-                try:
-                    ec2.delete_volume(VolumeId=db_item['volumeId'])
-                    print(f"Volume {db_item['volumeId']} deleted")
-                    break
-                except ClientError as e:
-                    if 'VolumeInUse' in str(e):
-                        print("Volume in use, waiting...")
-                        time.sleep(5)
-                    else:
-                        raise e
-
-        except ClientError as e:
-            print(f"Error deleting volume: {e}")
+    # Note: EBS volumes are automatically deleted by Fargate when the service is deleted
+    
 
     return {'statusCode': 200, 'body': json.dumps({'message': 'Database deleted'})}
 
