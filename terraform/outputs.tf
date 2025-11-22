@@ -38,6 +38,16 @@ output "api_domain_url" {
   value       = "https://api.${var.domain_name}"
 }
 
+output "router_service_name" {
+  description = "WhaleRay Router ECS Service Name"
+  value       = aws_ecs_service.router.name
+}
+
+output "service_discovery_namespace" {
+  description = "Service Discovery Namespace (Cloud Map)"
+  value       = aws_service_discovery_private_dns_namespace.whaleray.name
+}
+
 /*
 output "cloudwatch_dashboard_url" {
   description = "CloudWatch Dashboard URL"

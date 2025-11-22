@@ -376,7 +376,7 @@ resource "aws_lambda_function" "ecs_deployer" {
     aws_lambda_layer_version.github_utils_layer.arn
   ]
 
-  source_code_hash = try(filebase64sha256(local.ecs_deployer_lambda_zip_path), null)
+  source_code_hash = null_resource.archive_ecs_deployer_lambda.triggers.source_hash
 
   environment {
     variables = {
@@ -386,9 +386,13 @@ resource "aws_lambda_function" "ecs_deployer" {
       USERS_TABLE         = aws_dynamodb_table.users.name
       TASK_EXECUTION_ROLE = aws_iam_role.ecs_task_execution.arn
       TASK_ROLE           = aws_iam_role.ecs_task.arn
-      TARGET_GROUP_ARN    = aws_lb_target_group.default.arn
       ECR_REPOSITORY_URL  = aws_ecr_repository.app_repo.repository_url
       FRONTEND_URL        = "https://${var.domain_name}"
+      API_DOMAIN          = "${var.service_domain_prefix}.${var.domain_name}"
+      # Fargate 네트워크 설정
+      PRIVATE_SUBNETS                = join(",", aws_subnet.private[*].id)
+      FARGATE_TASK_SG                = aws_security_group.fargate_tasks.id
+      SERVICE_DISCOVERY_REGISTRY_ARN = aws_service_discovery_service.app_services.arn
     }
   }
 }
