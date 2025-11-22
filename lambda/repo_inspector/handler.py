@@ -97,7 +97,7 @@ def handler(event, context):
                 github_app_id=GITHUB_APP_ID,
                 private_key_secret_arn=GITHUB_APP_PRIVATE_KEY_ARN
             )
-            
+
             # 3. 레포지토리 분석 (프레임워크 감지)
             framework = detect_framework(repository_full_name, branch, installation_access_token)
             
@@ -131,7 +131,23 @@ def handler(event, context):
             )
             print(f"Successfully started CodeBuild for deployment {deployment_id}")
 
-            # 6. 배포 상태를 'BUILDING'으로 업데이트
+            # 6. 배포 상태를 'BUILDING'으로 업데이트 (CodeBuild 로그 정보 포함)
+            print(f"Updating status to BUILDING for deployment {deployment_id}.")
+            
+            # Spring Boot 프로젝트일 때 포트 8080 설정
+            extra_attrs = {
+                'framework': framework,
+                'codebuild_project': codebuild_project,
+                'codebuildLogGroup': f'/aws/codebuild/{codebuild_project}',
+                'codebuildLogStream': f'{deployment_id}/{build_id.split(":")[-1]}',
+                'buildId': build_id
+            }
+            
+            if framework and framework.startswith('spring-boot'):
+                extra_attrs['port'] = 8080
+                print(f"Detected Spring Boot project - setting port to 8080")
+            
+
             update_deployment_status(
                 DEPLOYMENTS_TABLE,
                 deployment_id, 'BUILDING',
