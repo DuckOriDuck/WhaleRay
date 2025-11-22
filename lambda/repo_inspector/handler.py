@@ -68,8 +68,24 @@ def handler(event, context):
             # 람다를 성공적으로 종료하여 재시도를 방지
             return {'status': 'INSPECTING_FAIL'}
 
-        # 4. CodeBuild 프로젝트 실행
+        # 4. SOURCE_DIR 환경 변수 설정
+        source_dir = ""
+        if ":" in framework:
+            source_dir = framework.split(":")[1]
+            print(f"Detected source directory: {source_dir}")
+
+        # 5. CodeBuild 프로젝트 실행
         print(f"Starting CodeBuild project '{codebuild_project}' for deployment {deployment_id}")
+        env_vars = [
+            {'name': 'DEPLOYMENT_ID', 'value': deployment_id, 'type': 'PLAINTEXT'},
+            {'name': 'REPOSITORY_FULL_NAME', 'value': repository_full_name, 'type': 'PLAINTEXT'},
+            {'name': 'INSTALLATION_ID', 'value': str(installation_id), 'type': 'PLAINTEXT'},
+            {'name': 'ECR_IMAGE_URI', 'value': f"{ECR_REPOSITORY_URL}:{deployment_id}", 'type': 'PLAINTEXT'}
+        ]
+        
+        if source_dir:
+            env_vars.append({'name': 'SOURCE_DIR', 'value': source_dir, 'type': 'PLAINTEXT'})
+            
         codebuild.start_build(
             projectName=codebuild_project,
             sourceVersion=branch,  # 빌드할 브랜치 지정
@@ -81,12 +97,7 @@ def handler(event, context):
                     'streamName': deployment_id
                 }
             },
-            environmentVariablesOverride=[
-                {'name': 'DEPLOYMENT_ID', 'value': deployment_id, 'type': 'PLAINTEXT'},
-                {'name': 'REPOSITORY_FULL_NAME', 'value': repository_full_name, 'type': 'PLAINTEXT'},
-                {'name': 'INSTALLATION_ID', 'value': str(installation_id), 'type': 'PLAINTEXT'},
-                {'name': 'ECR_IMAGE_URI', 'value': f"{ECR_REPOSITORY_URL}:{deployment_id}", 'type': 'PLAINTEXT'}
-            ]
+            environmentVariablesOverride=env_vars
         )
         print(f"Successfully started CodeBuild for deployment {deployment_id}")
 
@@ -114,7 +125,7 @@ def handler(event, context):
 
 def detect_framework(repository_full_name: str, branch: str, github_token: str) -> Optional[str]:
     """
-    GitHub 레포지토리에서 프레임워크 감지
+    GitHub 레포지토리에서 프레임워크 감지 및 소스 디렉토리 탐지
     """
     print(f"Detecting framework for {repository_full_name} on branch {branch}...")
     headers = {'Authorization': f'Bearer {github_token}', 'Accept': 'application/vnd.github.v3+json'}
@@ -129,23 +140,73 @@ def detect_framework(repository_full_name: str, branch: str, github_token: str) 
             print(f"Error checking file {file_path}: {e}")
             return False
 
-    if check_file_exists('pom.xml') or check_file_exists('build.gradle'):
-        return 'spring-boot'
-    if check_file_exists('next.config.js'):
-        return 'nextjs'
-    if check_file_exists('package.json'):
-        return 'nodejs'
+    def get_directory_contents(path: str = "") -> list:
+        """디렉토리 내용을 가져옴"""
+        url = f"{base_url}{path}?ref={branch}"
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except requests.exceptions.RequestException as e:
+            print(f"Error getting directory contents {path}: {e}")
+            return []
+
+    def find_dockerfile_locations() -> Dict[str, str]:
+        """Dockerfile의 위치를 탐색하고 반환"""
+        dockerfile_map = {}
+        
+        if check_file_exists('Dockerfile'):
+            dockerfile_map['root'] = '.'
+            print("Found Dockerfile in root directory")
+        
+        root_contents = get_directory_contents()
+        for item in root_contents:
+            if item.get('type') == 'dir':
+                dir_name = item.get('name', '')
+                if check_file_exists(f'{dir_name}/Dockerfile'):
+                    dockerfile_map[dir_name] = dir_name
+                    print(f"Found Dockerfile in {dir_name}/ directory")
+        
+        return dockerfile_map
+
+    # Dockerfile 위치 탐색
+    dockerfile_locations = find_dockerfile_locations()
+    
+    # 프로젝트 루트에서 build.gradle 확인
+    if check_file_exists('build.gradle'):
+        if 'root' in dockerfile_locations:
+            return 'spring-boot'
+        else:
+            print("Spring Boot project found in root but no Dockerfile - will auto-generate")
+            return 'spring-boot'
+    
+    # 서브디렉토리 탐색
+    root_contents = get_directory_contents()
+    
+    for item in root_contents:
+        if item.get('type') == 'dir':
+            dir_name = item.get('name', '')
+            
+            # 일반적인 소스 디렉토리명들 확인
+            if dir_name.lower() in ['src', 'app', 'backend', 'frontend', 'server', 'api']:
+                if check_file_exists(f'{dir_name}/build.gradle'):
+                    print(f"Found Spring Boot project in {dir_name}/ directory")
+                    
+                    if dir_name in dockerfile_locations:
+                        print(f"Dockerfile found in same directory: {dir_name}")
+                    elif 'root' in dockerfile_locations:
+                        print(f"Dockerfile found in root, will use for {dir_name}")
+                    else:
+                        print(f"No Dockerfile found for {dir_name} - will auto-generate")
+                    
+                    return f'spring-boot:{dir_name}'
     
     return None
 
 
 def select_codebuild_project(framework: str) -> Optional[str]:
-    """
-    프레임워크에 따라 CodeBuild 프로젝트 선택
-    """
-    mapping = {
-        'spring-boot': f'{PROJECT_NAME}-spring-boot',
-        'nodejs': f'{PROJECT_NAME}-nodejs',
-        'nextjs': f'{PROJECT_NAME}-nextjs'
-    }
-    return mapping.get(framework)
+    base_framework = framework.split(':')[0]
+    if base_framework == 'spring-boot':
+        return f'{PROJECT_NAME}-spring-boot'
+    return None
