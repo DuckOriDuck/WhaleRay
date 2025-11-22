@@ -278,14 +278,14 @@ locals {
 }
 
 resource "null_resource" "archive_deploy_lambda" {
-  depends_on = [null_resource.clean_lambda_pycache]
+  depends_on = []
 
   triggers = {
     source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/deploy", "**") : filesha1("${path.module}/../lambda/deploy/${f}")]))
   }
 
   provisioner "local-exec" {
-    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/deploy ${local.deploy_lambda_zip_path}"
+    command     = "python3 ${path.module}/../lambda/clean_pycache.py && python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/deploy ${local.deploy_lambda_zip_path}"
     interpreter = ["/bin/bash", "-c"]
   }
 }
@@ -324,27 +324,27 @@ locals {
 }
 
 resource "null_resource" "archive_deployments_api_lambda" {
-  depends_on = [null_resource.clean_lambda_pycache]
+  depends_on = []
 
   triggers = {
     source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/deployments_api", "**") : filesha1("${path.module}/../lambda/deployments_api/${f}")]))
   }
 
   provisioner "local-exec" {
-    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/deployments_api ${local.deployments_api_lambda_zip_path}"
+    command     = "python3 ${path.module}/../lambda/clean_pycache.py && python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/deployments_api ${local.deployments_api_lambda_zip_path}"
     interpreter = ["/bin/bash", "-c"]
   }
 }
 
 resource "null_resource" "archive_service_lambda" {
-  depends_on = [null_resource.clean_lambda_pycache]
+  depends_on = []
 
   triggers = {
     source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/service", "**") : filesha1("${path.module}/../lambda/service/${f}")]))
   }
 
   provisioner "local-exec" {
-    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/service ${local.service_lambda_zip_path}"
+    command     = "python3 ${path.module}/../lambda/clean_pycache.py && python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/service ${local.service_lambda_zip_path}"
     interpreter = ["/bin/bash", "-c"]
   }
 }
@@ -406,14 +406,14 @@ locals {
 }
 
 resource "null_resource" "archive_ecs_deployer_lambda" {
-  depends_on = [null_resource.clean_lambda_pycache]
+  depends_on = []
 
   triggers = {
     source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/ecs_deployer", "**") : filesha1("${path.module}/../lambda/ecs_deployer/${f}")]))
   }
 
   provisioner "local-exec" {
-    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/ecs_deployer ${local.ecs_deployer_lambda_zip_path}"
+    command     = "python3 ${path.module}/../lambda/clean_pycache.py && python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/ecs_deployer ${local.ecs_deployer_lambda_zip_path}"
     interpreter = ["/bin/bash", "-c"]
   }
 }
@@ -460,14 +460,14 @@ locals {
 }
 
 resource "null_resource" "archive_logs_api_lambda" {
-  depends_on = [null_resource.clean_lambda_pycache]
+  depends_on = []
 
   triggers = {
     source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/logs_api", "**") : filesha1("${path.module}/../lambda/logs_api/${f}")]))
   }
 
   provisioner "local-exec" {
-    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/logs_api ${local.logs_api_lambda_zip_path}"
+    command     = "python3 ${path.module}/../lambda/clean_pycache.py && python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/logs_api ${local.logs_api_lambda_zip_path}"
     interpreter = ["/bin/bash", "-c"]
   }
 }
@@ -498,14 +498,14 @@ locals {
 }
 
 resource "null_resource" "archive_repo_inspector_lambda" {
-  depends_on = [null_resource.clean_lambda_pycache]
+  depends_on = []
 
   triggers = {
     source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/repo_inspector", "**") : filesha1("${path.module}/../lambda/repo_inspector/${f}")]))
   }
 
   provisioner "local-exec" {
-    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/repo_inspector ${local.repo_inspector_lambda_zip_path}"
+    command     = "python3 ${path.module}/../lambda/clean_pycache.py && python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/repo_inspector ${local.repo_inspector_lambda_zip_path}"
     interpreter = ["/bin/bash", "-c"]
   }
 }
