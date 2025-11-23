@@ -5,7 +5,19 @@ phases:
       - echo "Logging in to Amazon ECR..."
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
       - echo "Restoring .env file from SSM if provided..."
-      - if [ -n "$DOTENV_BLOB_SSM_PATH" ]; then aws ssm get-parameter --name "$DOTENV_BLOB_SSM_PATH" --with-decryption --query Parameter.Value --output text > .env && echo "Successfully restored .env file."; else echo ".env file not provided, skipping."; fi
+      - |
+        if [ -n "$DOTENV_BLOB_SSM_PATH" ]; then
+          echo "Attempting to restore .env from SSM: $DOTENV_BLOB_SSM_PATH"
+          if ! aws ssm get-parameter --name "$DOTENV_BLOB_SSM_PATH" --with-decryption --query Parameter.Value --output text | tr -d '\r' > .env; then
+            echo "ERROR: Failed to restore .env file from SSM Parameter Store."
+            echo "This could be due to missing parameter, insufficient permissions, or network issues."
+            echo "Build cannot proceed without environment variables."
+            exit 1
+          fi
+          echo "Successfully restored .env file from SSM."
+        else
+          echo ".env file path not provided (DOTENV_BLOB_SSM_PATH is empty), skipping environment variable restoration."
+        fi
   build:
     commands:
       - echo "Build started for Next.js on `date`"

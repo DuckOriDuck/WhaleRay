@@ -49,6 +49,10 @@ def handler(event, context):
         branch = body.get('branch', 'main')
         env_file_content = body.get('envFileContent', '')
         is_reset = body.get('isReset', False) # isReset 플래그 추출
+        
+        # DynamoDB 빈 문자열 저장 제한 처리: 빈 문자열을 None으로 변환
+        if env_file_content == '':
+            env_file_content = None
 
         if not repository_full_name:
             return _response(400, {'error': 'repositoryFullName is required'})
@@ -89,8 +93,9 @@ def handler(event, context):
         deployment_id = str(uuid4())
         timestamp = int(time.time())
         
-        service_name = repository_full_name.replace('/', '-')
-        service_id = f"{user_id}-{service_name}"
+        # serviceId 충돌 방지: :: 구분자 사용 (user/my-repo와 user-my/repo 구분)
+        service_name = repository_full_name.replace('/', '--')
+        service_id = f"{user_id}::{service_name}"
 
         # DynamoDB에 저장할 아이템 구성
         item_to_store = {
@@ -103,10 +108,13 @@ def handler(event, context):
             'updatedAt': timestamp,
             'serviceName': service_name,
             'serviceId': service_id,
-            'envFileContent': env_file_content,
             'isReset': is_reset, # isReset 플래그 포함
             'status': 'INSPECTING' # 초기 상태
         }
+        
+        # envFileContent가 None이 아닐 때만 추가 (DynamoDB 빈 문자열 제한 회피)
+        if env_file_content is not None:
+            item_to_store['envFileContent'] = env_file_content
 
         # DynamoDB에 배포 정보 저장 (이 작업이 DynamoDB 스트림을 통해 repo_inspector를 트리거)
         deployments_table.put_item(Item=item_to_store)

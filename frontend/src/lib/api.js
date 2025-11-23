@@ -136,18 +136,23 @@ export async function getGitHubRepositories() {
 /**
  * POST /deployments - 새 배포 시작
  */
-export async function createDeployment(repositoryFullName, branch, envFileContent = '') {
+export async function createDeployment(repositoryFullName, branch, envFileContent = '', isReset = false) {
   const headers = getAuthHeaders()
-  
+
   const requestBody = {
     repositoryFullName,
     branch
   }
-  
+
+  // 환경 변수 초기화 플래그 (기존 환경 변수 삭제)
+  if (isReset) {
+    requestBody.isReset = true
+  }
   // 환경변수 내용이 있으면 추가
-  if (envFileContent.trim()) {
+  else if (envFileContent.trim()) {
     requestBody.envFileContent = envFileContent
   }
+  // 둘 다 없으면 기존 값 유지 (재배포) 또는 에러 (초기 배포)
 
   const response = await fetch(`${API_BASE_URL}/deployments`, {
     method: 'POST',
@@ -168,15 +173,15 @@ export async function createDeployment(repositoryFullName, branch, envFileConten
  */
 export async function getDeploymentLogs(deploymentId, options = {}) {
   const headers = getAuthHeaders()
-  
+
   // Query parameters 생성
   const params = new URLSearchParams()
   if (options.type) params.append('type', options.type) // 'build', 'runtime', 'all'
   if (options.limit) params.append('limit', options.limit.toString())
   if (options.lastEventTime) params.append('lastEventTime', options.lastEventTime.toString())
-  
+
   const url = `${API_BASE_URL}/deployments/${deploymentId}/logs${params.toString() ? '?' + params.toString() : ''}`
-  
+
   const response = await fetch(url, {
     method: 'GET',
     headers

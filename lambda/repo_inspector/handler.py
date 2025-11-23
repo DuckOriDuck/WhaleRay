@@ -42,7 +42,8 @@ def handler(event, context):
         installation_id = int(new_image['installationId']['N'])
         
         # envFileContent와 isReset은 env_builder로 그대로 전달
-        env_file_content = new_image.get('envFileContent', {}).get('S', '')
+        # DynamoDB에 키가 없으면 None으로 처리 (deploy Lambda와 일관성 유지)
+        env_file_content = new_image.get('envFileContent', {}).get('S')
         is_reset = new_image.get('isReset', {}).get('BOOL', False)
 
         framework = None

@@ -23,7 +23,9 @@ def handler(event, context):
     repo_inspector로부터 분석된 정보를 받아
     SSM에 환경변수를 저장하고 CodeBuild를 트리거하는 건축가 Lambda
     """
-    print(f"Received event: {json.dumps(event, default=str)}")
+    # 민감 정보 마스킹: envFileContent를 로그에 노출하지 않음
+    safe_event = {k: ('***REDACTED***' if k == 'envFileContent' else v) for k, v in event.items()}
+    print(f"Received event: {json.dumps(safe_event, default=str)}")
 
     # Event Payload 추출
     deployment_id = event.get('deploymentId')
@@ -40,8 +42,15 @@ def handler(event, context):
         return
 
     try:
+        # 0. isReset과 envFileContent 동시 제공 검증
+        if is_reset and env_file_content:
+            raise Exception("Cannot specify both 'isReset' and 'envFileContent'. Please choose one action: reset environment variables OR update them, not both.")
+        
         # 1. .env Blob 처리 (point.txt 3단 논리)
         env_blob_ssm_path = f"/{PROJECT_NAME}/{user_id}/{service_id}/DOTENV_BLOB"
+        
+        # SSM Parameter Store 크기 제한 (SecureString: 4KB)
+        MAX_SSM_SIZE = 4096
         
         # (1) 초기화 확인: isReset이 true 인가?
         if is_reset:
@@ -60,7 +69,15 @@ def handler(event, context):
 
         # (2) 입력 확인: envFileContent가 있는가?
         elif env_file_content:
-            print(f"envFileContent provided. Storing/Updating DOTENV_BLOB for service {service_id}")
+            # SSM 크기 제한 검증
+            content_size = len(env_file_content.encode('utf-8'))
+            if content_size > MAX_SSM_SIZE:
+                raise Exception(
+                    f"Environment file size ({content_size} bytes) exceeds AWS SSM Parameter Store limit ({MAX_SSM_SIZE} bytes / 4KB). "
+                    f"Please reduce the number of environment variables or consider using shorter variable names/values."
+                )
+            
+            print(f"envFileContent provided ({content_size} bytes). Storing/Updating DOTENV_BLOB for service {service_id}")
             try:
                 ssm_client.put_parameter(
                     Name=env_blob_ssm_path,
