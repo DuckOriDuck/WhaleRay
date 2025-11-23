@@ -174,6 +174,7 @@ def handler(event, context):
         task_def_arn = task_definition['taskDefinition']['taskDefinitionArn']
 
         # ECS Service 생성 또는 업데이트
+        action = 'unknown'  # 초기값 설정하여 NameError 방지
         try:
             # 기존 서비스 조회
             existing_services = ecs.describe_services(
@@ -222,7 +223,7 @@ def handler(event, context):
 
         # Deployments 테이블 업데이트
         # 배포 성공 시점에 엔드포인트가 확정되므로 여기가 더 적합합니다.
-        service_endpoint = f"https://{os.environ['API_DOMAIN']}/{service_id}"
+        service_endpoint = f"https://{os.environ['API_DOMAIN']}/{service_id}/"
 
         update_deployment_status(
             DEPLOYMENTS_TABLE,
@@ -294,24 +295,16 @@ def supersede_previous_deployment(current_deployment: dict, service_id: str, ser
                 'SUPERSEDED'
             )
 
-        # 3. services 테이블의 activeDeploymentId를 현재 배포 ID로 업데이트합니다.
-        update_expression_parts = [
-            'activeDeploymentId = :did',
-            'userId = :uid', # GSI용
-            'serviceName = :sname',
-            'serviceEndpoint = :endpoint'
-        ]
-        expression_attr_values = {
-            ':did': current_deployment_id,
-            ':uid': user_id,
-            ':sname': service_name,
-            ':endpoint': service_endpoint
-        }
-
-        services_table.update_item(
-            Key={'serviceId': service_id},
-            UpdateExpression='SET ' + ', '.join(update_expression_parts),
-            ExpressionAttributeValues=expression_attr_values
+        # 3. services 테이블에 서비스 레코드를 생성/업데이트합니다.
+        # put_item을 사용하여 새 레코드 생성과 기존 레코드 업데이트 모두 지원
+        services_table.put_item(
+            Item={
+                'serviceId': service_id,
+                'activeDeploymentId': current_deployment_id,
+                'userId': user_id,
+                'serviceName': service_name,
+                'serviceEndpoint': service_endpoint
+            }
         )
         print(f"Service {service_id} active deployment updated to {current_deployment_id}.")
         print(f"Service endpoint: {service_endpoint}")

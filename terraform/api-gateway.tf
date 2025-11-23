@@ -210,18 +210,6 @@ resource "aws_apigatewayv2_integration" "service" {
   }
 }
 
-resource "aws_apigatewayv2_route" "deploy" {
-  api_id             = aws_apigatewayv2_api.main.id
-  route_key          = "POST /deploy"
-  target             = "integrations/${aws_apigatewayv2_integration.deploy.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
-
-  lifecycle {
-    create_before_destroy = true
-    replace_triggered_by  = [aws_apigatewayv2_integration.deploy.id]
-  }
-}
 
 resource "aws_apigatewayv2_route" "services_list" {
   api_id             = aws_apigatewayv2_api.main.id

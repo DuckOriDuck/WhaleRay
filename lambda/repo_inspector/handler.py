@@ -29,25 +29,48 @@ deployments_table = dynamodb.Table(DEPLOYMENTS_TABLE)
 
 def handler(event, context):
     """
-    DynamoDB Stream 이벤트(deployments 테이블 INSERT)를 받아
+    DynamoDB Stream 이벤트 또는 직접 호출을 받아
     .env 내용을 Blob으로 SSM에 저장하고, 레포지토리를 분석한 후,
     적절한 CodeBuild 프로젝트를 선택하여 배포를 시작하는 Lambda
     """
     print(f"Received event: {json.dumps(event, default=str)}")
 
-    for record in event['Records']:
-        if record['eventName'] != 'INSERT':
-            continue
+    # 이벤트 형태 확인: DynamoDB Stream vs 직접 호출
+    if 'Records' in event:
+        # DynamoDB Stream 이벤트 처리
+        records_to_process = []
+        for record in event['Records']:
+            if record['eventName'] == 'INSERT':
+                new_image = record['dynamodb']['NewImage']
+                records_to_process.append({
+                    'deployment_id': new_image['deploymentId']['S'],
+                    'user_id': new_image['userId']['S'], 
+                    'service_id': new_image['serviceId']['S'],
+                    'repository_full_name': new_image['repositoryFullName']['S'],
+                    'branch': new_image['branch']['S'],
+                    'installation_id': int(new_image['installationId']['N']),
+                    'env_file_content': new_image.get('envFileContent', {}).get('S', '')
+                })
+    else:
+        # 직접 호출 이벤트 처리
+        records_to_process = [{
+            'deployment_id': event['deploymentId'],
+            'user_id': event['userId'],
+            'service_id': event['serviceId'], 
+            'repository_full_name': event['repositoryFullName'],
+            'branch': event['branch'],
+            'installation_id': int(event['installationId']),
+            'env_file_content': event.get('envFileContent', '')
+        }]
 
-        # DynamoDB Stream에서 새 배포 정보 추출
-        new_image = record['dynamodb']['NewImage']
-        deployment_id = new_image['deploymentId']['S']
-        user_id = new_image['userId']['S']
-        service_id = new_image['serviceId']['S']
-        repository_full_name = new_image['repositoryFullName']['S']
-        branch = new_image['branch']['S']
-        installation_id = int(new_image['installationId']['N'])
-        env_file_content = new_image.get('envFileContent', {}).get('S', '')
+    for record_data in records_to_process:
+        deployment_id = record_data['deployment_id']
+        user_id = record_data['user_id']
+        service_id = record_data['service_id']
+        repository_full_name = record_data['repository_full_name']
+        branch = record_data['branch']
+        installation_id = record_data['installation_id']
+        env_file_content = record_data['env_file_content']
 
         framework = None
         try:
@@ -63,8 +86,7 @@ def handler(event, context):
                         Value=env_file_content,
                         Type='SecureString',
                         KeyId=SSM_KMS_KEY_ARN,
-                        Overwrite=True,
-                        Tags=[{'Key': 'serviceId', 'Value': service_id}]
+                        Overwrite=True
                     )
                     print(f"Stored DOTENV_BLOB to SSM: {env_blob_ssm_path}")
                 except Exception as e:
@@ -79,11 +101,22 @@ def handler(event, context):
                     ssm_client.get_parameter(Name=env_blob_ssm_path, WithDecryption=False)
                     print(f"Existing DOTENV_BLOB found. Skipping update.")
                 except ssm_client.exceptions.ParameterNotFound:
-                    # 1.3. 초기 배포인데 입력이 없으면 에러
-                    error_message = "Initial deployment requires .env content, but none was provided."
-                    print(error_message)
-                    update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'INSPECTING_FAIL', errorMessage=error_message)
-                    continue
+                    # 1.3. 초기 배포인데 입력이 없으면 빈 환경변수로 진행
+                    print("No existing .env found and no content provided. Creating empty DOTENV_BLOB.")
+                    try:
+                        ssm_client.put_parameter(
+                            Name=env_blob_ssm_path,
+                            Value="# No environment variables provided\n",
+                            Type='SecureString',
+                            KeyId=SSM_KMS_KEY_ARN,
+                            Overwrite=True
+                        )
+                        print(f"Created empty DOTENV_BLOB at SSM: {env_blob_ssm_path}")
+                    except Exception as e:
+                        error_message = f"Failed to create empty .env blob in SSM: {str(e)}"
+                        print(error_message)
+                        update_deployment_status(DEPLOYMENTS_TABLE, deployment_id, 'INSPECTING_FAIL', errorMessage=error_message)
+                        continue
                 except Exception as e:
                     error_message = f"Failed to check existing .env blob in SSM: {str(e)}"
                     print(error_message)

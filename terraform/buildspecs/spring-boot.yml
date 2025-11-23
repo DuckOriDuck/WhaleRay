@@ -2,12 +2,13 @@ version: 0.2
 phases:
   pre_build:
     commands:
-      - echo "=== Enhanced Spring Boot Gradle Build Started ==="
-      - echo "Build Environment Variables:"
-      - echo "  Source Directory: $SOURCE_DIR"
-      - echo "  Build Context: $BUILD_CONTEXT" 
-      - echo "  Dockerfile Path: $DOCKERFILE_PATH"
-      - echo "  Has Gradle Wrapper: $HAS_GRADLE_WRAPPER"
+      - |
+        echo "=== Enhanced Spring Boot Gradle Build Started ==="
+        echo "Build Environment Variables:"
+        echo "  Source Directory: $SOURCE_DIR"
+        echo "  Build Context: $BUILD_CONTEXT"
+        echo "  Dockerfile Path: $DOCKERFILE_PATH"
+        echo "  Has Gradle Wrapper: $HAS_GRADLE_WRAPPER"
       - echo "Logging in to Amazon ECR..."
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
       - echo "Restoring .env file from SSM if provided..."
@@ -84,26 +85,18 @@ phases:
         # Auto-generate Dockerfile if needed
         if [ ! -f "$FINAL_DOCKERFILE_PATH" ]; then
           echo "Creating optimized Dockerfile for Spring Boot..."
-          cat > $FINAL_DOCKERFILE_PATH << 'EOF'
-FROM eclipse-temurin:17-jre-alpine
-
-# Create non-root user for security
-RUN addgroup -g 1001 -S spring && adduser -u 1001 -S spring -G spring
-
-WORKDIR /app
-
-# Copy JAR file (support both single and multiple JAR scenarios)
-COPY build/libs/*.jar app.jar
-
-# Set ownership
-RUN chown -R spring:spring /app
-USER spring
-
-EXPOSE 8080
-
-# Use exec form for better signal handling
-ENTRYPOINT ["java", "-jar", "app.jar"]
-EOF
+          echo 'FROM eclipse-temurin:17-jre-alpine' > "$FINAL_DOCKERFILE_PATH"
+          echo '# Create non-root user for security' >> "$FINAL_DOCKERFILE_PATH"
+          echo 'RUN addgroup -g 1001 -S spring && adduser -u 1001 -S spring -G spring' >> "$FINAL_DOCKERFILE_PATH"
+          echo 'WORKDIR /app' >> "$FINAL_DOCKERFILE_PATH"
+          echo '# Copy JAR file (support both single and multiple JAR scenarios)' >> "$FINAL_DOCKERFILE_PATH"
+          echo 'COPY build/libs/*.jar app.jar' >> "$FINAL_DOCKERFILE_PATH"
+          echo '# Set ownership' >> "$FINAL_DOCKERFILE_PATH"
+          echo 'RUN chown -R spring:spring /app' >> "$FINAL_DOCKERFILE_PATH"
+          echo 'USER spring' >> "$FINAL_DOCKERFILE_PATH"
+          echo 'EXPOSE 8080' >> "$FINAL_DOCKERFILE_PATH"
+          echo '# Use exec form for better signal handling' >> "$FINAL_DOCKERFILE_PATH"
+          echo 'ENTRYPOINT ["java", "-jar", "app.jar"]' >> "$FINAL_DOCKERFILE_PATH"
           echo "Created optimized Dockerfile with security best practices"
         fi
         
@@ -120,7 +113,6 @@ EOF
         docker build -f "$FINAL_DOCKERFILE_PATH" -t $ECR_IMAGE_URI .
         
         echo "Docker image built successfully"
-        docker images | grep $ECR_IMAGE_URI
   post_build:
     commands:
       - echo "Pushing Docker image to ECR..."

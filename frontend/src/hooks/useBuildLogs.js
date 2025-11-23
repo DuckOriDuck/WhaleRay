@@ -106,7 +106,7 @@ export function useBuildLogs(deploymentId, options = {}) {
 
     // 완료 상태가 아닌 경우에만 폴링 시작
     const startPolling = (currentStatus) => {
-      if (['RUNNING', 'FAILED', 'BUILDING_FAIL', 'DEPLOYING_FAIL'].includes(currentStatus)) {
+      if (['RUNNING', 'FAILED', 'BUILDING_FAIL', 'DEPLOYING_FAIL', 'SUPERSEDED', 'INSPECTING_FAIL', 'TIMEOUT'].includes(currentStatus)) {
         if (intervalRef.current) {
           clearInterval(intervalRef.current)
         }
@@ -121,7 +121,7 @@ export function useBuildLogs(deploymentId, options = {}) {
             const response = await fetchLogs(true)
             
             // 완료 상태면 폴링 중단
-            if (response && ['RUNNING', 'FAILED', 'BUILDING_FAIL', 'DEPLOYING_FAIL'].includes(response.status)) {
+            if (response && ['RUNNING', 'FAILED', 'BUILDING_FAIL', 'DEPLOYING_FAIL', 'SUPERSEDED', 'INSPECTING_FAIL', 'TIMEOUT'].includes(response.status)) {
               clearInterval(intervalRef.current)
               intervalRef.current = null
               setIsPolling(false)
@@ -134,6 +134,13 @@ export function useBuildLogs(deploymentId, options = {}) {
       }
     }
 
+    // 기존 폴링 정리 후 새로운 폴링 시작
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+      setIsPolling(false)
+    }
+    
     // status가 업데이트된 후 폴링 제어
     fetchLogs(false).then(response => {
       if (response) {

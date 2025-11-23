@@ -228,10 +228,36 @@ function App() {
           <p style={{
             color: '#666',
             fontSize: '16px',
-            marginBottom: '48px'
+            marginBottom: '24px'
           }}>
             Railway 스타일 배포 플랫폼
           </p>
+          
+          {/* SoftBank Hackathon 2025 뱃지 */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'linear-gradient(135deg, #FF6B6B 0%, #FFE66D 100%)',
+            color: '#333',
+            padding: '8px 16px',
+            borderRadius: '20px',
+            fontSize: '12px',
+            fontWeight: '600',
+            marginBottom: '32px',
+            boxShadow: '0 4px 12px rgba(255, 107, 107, 0.3)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            <span style={{
+              width: '8px',
+              height: '8px',
+              background: '#FF3B3B',
+              borderRadius: '50%',
+              animation: 'pulse 2s infinite'
+            }}></span>
+            SoftBank Hackathon 2025 Participating
+          </div>
 
           <button
             onClick={handleSignIn}
@@ -277,7 +303,33 @@ function App() {
     <div>
       <div className="header">
         <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1>WhaleRay</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <h1>WhaleRay</h1>
+            {/* SoftBank Hackathon 2025 뱃지 */}
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'linear-gradient(135deg, #FF6B6B 0%, #FFE66D 100%)',
+              color: '#333',
+              padding: '4px 12px',
+              borderRadius: '12px',
+              fontSize: '10px',
+              fontWeight: '600',
+              textTransform: 'uppercase',
+              letterSpacing: '0.3px',
+              boxShadow: '0 2px 8px rgba(255, 107, 107, 0.3)'
+            }}>
+              <span style={{
+                width: '6px',
+                height: '6px',
+                background: '#FF3B3B',
+                borderRadius: '50%',
+                animation: 'pulse 2s infinite'
+              }}></span>
+              Hackathon 2025
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             <span style={{ color: '#666' }}>
               {user.username}
