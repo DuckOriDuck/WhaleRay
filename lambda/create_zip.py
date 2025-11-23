@@ -57,10 +57,10 @@ def create_zip(source_dir: str, output_zip: str, exclude_patterns: list = None):
         for root, dirs, files in os.walk(source_path):
             root_path = Path(root)
 
-            # Filter out excluded directories
-            dirs[:] = [d for d in dirs if not should_exclude(root_path / d)]
+            # Filter and sort directories for deterministic walk
+            dirs[:] = sorted([d for d in dirs if not should_exclude(root_path / d)])
 
-            for file in files:
+            for file in sorted(files):
                 file_path = root_path / file
 
                 # Skip excluded files
@@ -68,10 +68,19 @@ def create_zip(source_dir: str, output_zip: str, exclude_patterns: list = None):
                     continue
 
                 # Calculate relative path from source directory
-                arcname = file_path.relative_to(source_path)
+                arcname = str(file_path.relative_to(source_path)).replace(os.sep, '/')
 
-                # Add file to zip
-                zipf.write(file_path, arcname)
+                # Create ZipInfo with fixed timestamp for determinism
+                zinfo = zipfile.ZipInfo(arcname)
+                zinfo.date_time = (2020, 1, 1, 0, 0, 0)
+                zinfo.compress_type = zipfile.ZIP_DEFLATED
+
+                # Preserve file permissions
+                st = os.stat(file_path)
+                zinfo.external_attr = (st.st_mode & 0xFFFF) << 16
+
+                with open(file_path, 'rb') as f:
+                    zipf.writestr(zinfo, f.read())
 
     print(f"Created {output_path} from {source_path}")
     return 0

@@ -74,6 +74,9 @@ resource "aws_dynamodb_table" "deployments" {
     type = "N"
   }
 
+  stream_enabled   = true
+  stream_view_type = "NEW_AND_OLD_IMAGES" # 이 줄을 추가합니다.
+
   global_secondary_index {
     name            = "userId-index"
     hash_key        = "userId"

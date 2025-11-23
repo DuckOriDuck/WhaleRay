@@ -67,6 +67,16 @@ resource "aws_iam_role_policy" "lambda" {
       {
         Effect = "Allow"
         Action = [
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator",
+          "dynamodb:DescribeStream",
+          "dynamodb:ListStreams"
+        ]
+        Resource = aws_dynamodb_table.deployments.stream_arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
@@ -687,4 +697,10 @@ resource "aws_lambda_function" "database" {
 
 locals {
   db_event_listener_zip_path = "${path.module}/../build/database_event_listener.zip"
+}
+
+resource "aws_lambda_event_source_mapping" "repo_inspector_trigger" {
+  event_source_arn  = aws_dynamodb_table.deployments.stream_arn
+  function_name     = aws_lambda_function.repo_inspector.arn
+  starting_position = "LATEST"
 }

@@ -79,3 +79,18 @@ frontend/out/
 *.log
 logs/
 gemini.md
+
+# Temporary files
+*_logs.txt
+*_status.txt
+terraform_apply_*.txt
+terraform_plan_*.txt
+terraform_target_*.md
+deployment_*.md
+log_collection_*.md
+frontend_test_*.md
+
+# Keep important documentation
+!ENV_MANAGEMENT_IMPLEMENTATION.md
+!point.txt
+!task.md
