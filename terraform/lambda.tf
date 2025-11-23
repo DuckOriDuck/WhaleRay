@@ -181,6 +181,24 @@ resource "aws_iam_role_policy" "lambda" {
         Action   = "lambda:InvokeFunction"
         Resource = aws_lambda_function.repo_inspector.arn
       },
+      # [ADDED] Bedrock permissions for log analysis
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel"
+        ]
+        Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+      },
+      # [ADDED] AWS Marketplace permissions for Anthropic models
+      {
+        Effect = "Allow"
+        Action = [
+          "aws-marketplace:Subscribe",
+          "aws-marketplace:Unsubscribe", 
+          "aws-marketplace:ViewSubscriptions"
+        ]
+        Resource = "*"
+      },
       # [ADDED] Database Feature Permissions
       {
         Effect = "Allow"
@@ -632,6 +650,42 @@ resource "aws_lambda_function" "database" {
       ECS_TASK_ROLE_ARN   = aws_iam_role.ecs_task.arn
     }
   }
+}
+
+# ============================================
+# Log Analyzer Lambda (AI-powered log analysis)
+# ============================================
+
+locals {
+  log_analyzer_lambda_zip_path = "${path.module}/../build/log_analyzer.zip"
+}
+
+resource "null_resource" "archive_log_analyzer_lambda" {
+  depends_on = [null_resource.clean_lambda_pycache]
+
+  triggers = {
+    source_hash = sha1(join("", [for f in fileset("${path.module}/../lambda/log_analyzer", "**") : filesha1("${path.module}/../lambda/log_analyzer/${f}")]))
+  }
+
+  provisioner "local-exec" {
+    command     = "python3 ${path.module}/../lambda/create_zip.py ${path.module}/../lambda/log_analyzer ${local.log_analyzer_lambda_zip_path}"
+    interpreter = ["/bin/bash", "-c"]
+  }
+}
+
+resource "aws_lambda_function" "log_analyzer" {
+  depends_on    = [null_resource.archive_log_analyzer_lambda]
+  filename      = local.log_analyzer_lambda_zip_path
+  function_name = "${var.project_name}-log-analyzer"
+  role          = aws_iam_role.lambda.arn
+  handler       = "handler.handler"
+  runtime       = "python3.11"
+  timeout       = 30
+
+  source_code_hash = try(filebase64sha256(local.log_analyzer_lambda_zip_path), null)
+
+  # AWS_DEFAULT_REGION is automatically set by Lambda runtime
+  # No custom environment variables needed for this function
 }
 
 # ============================================

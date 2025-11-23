@@ -1,5 +1,7 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useBuildLogs } from '../hooks/useBuildLogs'
+import { getToken } from '../lib/auth'
+import { config } from '../config'
 
 /**
  * 실시간 배포 로그 컴포넌트
@@ -10,6 +12,12 @@ export function DeploymentLogs({ deploymentId, logType = 'all' }) {
     pollingInterval: 2000,
     enabled: Boolean(deploymentId)
   })
+
+  // AI 분석 상태
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState(null)
+  const [analysisError, setAnalysisError] = useState(null)
+  const [showAnalysis, setShowAnalysis] = useState(false)
 
   const logContainerRef = useRef(null)
   const shouldAutoScroll = useRef(true)
@@ -68,6 +76,39 @@ export function DeploymentLogs({ deploymentId, logType = 'all' }) {
     }
   }
 
+  // AI 로그 분석 함수
+  const analyzeLogsWithAI = async () => {
+    if (!logs.length || !deploymentId) return
+    
+    setAnalyzing(true)
+    setAnalysisError(null)
+    
+    try {
+      const token = getToken()
+      const response = await fetch(`${config.apiEndpoint}/deployments/${deploymentId}/analyze-logs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ logs })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`분석 실패: ${response.status}`)
+      }
+      
+      const result = await response.json()
+      setAnalysisResult(result.analysis)
+      setShowAnalysis(true)
+      
+    } catch (err) {
+      setAnalysisError(err.message)
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
   if (!deploymentId) {
     return (
       <div className="p-4 text-center text-gray-500">
@@ -77,6 +118,15 @@ export function DeploymentLogs({ deploymentId, logType = 'all' }) {
   }
 
   return (
+    <>
+      {/* CSS 애니메이션 정의 */}
+      <style>{`
+        @keyframes shimmer {
+          0% { left: -100%; }
+          100% { left: 100%; }
+        }
+      `}</style>
+      
     <div className="flex flex-col h-full bg-white">
       {/* 개선된 헤더 */}
       <div style={{
@@ -115,6 +165,110 @@ export function DeploymentLogs({ deploymentId, logType = 'all' }) {
           </div>
           
           <div className="flex items-center space-x-2">
+            {/* AI Analysis 버튼 - 개선된 디자인 */}
+            <button
+              onClick={analyzeLogsWithAI}
+              disabled={analyzing || logs.length === 0}
+              style={{
+                padding: '8px 16px',
+                fontSize: '13px',
+                fontWeight: '600',
+                background: analyzing 
+                  ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.15) 100%)' 
+                  : logs.length === 0 
+                    ? 'rgba(16, 185, 129, 0.3)'
+                    : 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                color: 'white',
+                border: analyzing 
+                  ? '1px solid rgba(16, 185, 129, 0.4)' 
+                  : logs.length === 0
+                    ? '1px solid rgba(16, 185, 129, 0.3)'
+                    : '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '8px',
+                cursor: (analyzing || logs.length === 0) ? 'default' : 'pointer',
+                opacity: (analyzing || logs.length === 0) ? '0.7' : '1',
+                transition: 'all 0.3s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: analyzing 
+                  ? '0 2px 8px rgba(16, 185, 129, 0.15)' 
+                  : logs.length === 0
+                    ? 'none'
+                    : '0 2px 12px rgba(16, 185, 129, 0.25)',
+                transform: analyzing ? 'scale(0.98)' : 'scale(1)',
+                position: 'relative',
+                overflow: 'hidden'
+              }}
+              onMouseOver={(e) => {
+                if (!analyzing && logs.length > 0) {
+                  e.target.style.background = 'linear-gradient(135deg, #059669 0%, #047857 100%)'
+                  e.target.style.transform = 'scale(1.05)'
+                  e.target.style.boxShadow = '0 4px 16px rgba(16, 185, 129, 0.4)'
+                }
+              }}
+              onMouseOut={(e) => {
+                if (!analyzing && logs.length > 0) {
+                  e.target.style.background = 'linear-gradient(135deg, #10B981 0%, #059669 100%)'
+                  e.target.style.transform = 'scale(1)'
+                  e.target.style.boxShadow = '0 2px 12px rgba(16, 185, 129, 0.25)'
+                }
+              }}
+            >
+              {/* 배경 애니메이션 효과 */}
+              {analyzing && (
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: '-100%',
+                  width: '100%',
+                  height: '100%',
+                  background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent)',
+                  animation: 'shimmer 1.5s infinite'
+                }}></div>
+              )}
+              
+              {/* 아이콘 */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '16px',
+                height: '16px'
+              }}>
+                {analyzing ? (
+                  <div style={{
+                    width: '14px',
+                    height: '14px',
+                    border: '2px solid rgba(255, 255, 255, 0.3)',
+                    borderTop: '2px solid white',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }}></div>
+                ) : (
+                  <span style={{ 
+                    fontSize: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: 'linear-gradient(45deg, #FFF, #E0F2FE)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1))'
+                  }}>
+                    ✨
+                  </span>
+                )}
+              </div>
+              
+              {/* 텍스트 */}
+              <span style={{
+                letterSpacing: '0.5px',
+                textShadow: analyzing ? 'none' : '0 1px 2px rgba(0, 0, 0, 0.1)'
+              }}>
+                {analyzing ? 'Analyzing...' : 'AI Analysis'}
+              </span>
+            </button>
+            
             <button
               onClick={refresh}
               disabled={isLoading}
@@ -205,6 +359,286 @@ export function DeploymentLogs({ deploymentId, logType = 'all' }) {
           </div>
         </div>
       </div>
+
+      {/* AI 분석 결과 모달 */}
+      {showAnalysis && analysisResult && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            maxWidth: '600px',
+            width: '100%',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          }}>
+            {/* 모달 헤더 */}
+            <div style={{
+              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+              color: 'white',
+              padding: '20px',
+              borderRadius: '12px 12px 0 0',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>🤖</span>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>AI Log Analysis Results</h3>
+              </div>
+              <button
+                onClick={() => setShowAnalysis(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'white',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  padding: '0',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '4px',
+                  opacity: '0.8',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseOver={(e) => {
+                  e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+                  e.target.style.opacity = '1'
+                }}
+                onMouseOut={(e) => {
+                  e.target.style.backgroundColor = 'transparent'
+                  e.target.style.opacity = '0.8'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* 모달 내용 */}
+            <div style={{ padding: '24px' }}>
+              {/* 요약 */}
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{
+                  margin: '0 0 12px 0',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#1f2937',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{
+                    width: '20px',
+                    height: '20px',
+                    backgroundColor: '#10B981',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '12px',
+                    color: 'white',
+                    fontWeight: '700'
+                  }}>📋</span>
+                  Deployment Summary
+                </h4>
+                <p style={{ 
+                  margin: 0, 
+                  color: '#4b5563', 
+                  lineHeight: '1.6',
+                  backgroundColor: '#f9fafb',
+                  padding: '16px',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  {analysisResult.summary}
+                </p>
+              </div>
+              
+              {/* 상태 */}
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#1f2937' }}>
+                  Deployment Status
+                </h4>
+                <span style={{
+                  padding: '8px 16px',
+                  borderRadius: '20px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  backgroundColor: analysisResult.status === 'success' ? '#d1fae5' :
+                                  analysisResult.status === 'error' ? '#fee2e2' :
+                                  analysisResult.status === 'warning' ? '#fef3c7' : '#e5e7eb',
+                  color: analysisResult.status === 'success' ? '#065f46' :
+                         analysisResult.status === 'error' ? '#991b1b' :
+                         analysisResult.status === 'warning' ? '#92400e' : '#374151'
+                }}>
+                  {analysisResult.status === 'success' ? '✅ Success' :
+                   analysisResult.status === 'error' ? '❌ Error' :
+                   analysisResult.status === 'warning' ? '⚠️ Warning' : '🔄 In Progress'}
+                </span>
+              </div>
+              
+              {/* 이슈 목록 */}
+              {analysisResult.issues && analysisResult.issues.length > 0 && (
+                <div style={{ marginBottom: '24px' }}>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#1f2937' }}>
+                    Issues Found
+                  </h4>
+                  {analysisResult.issues.map((issue, index) => (
+                    <div key={index} style={{
+                      marginBottom: '12px',
+                      padding: '16px',
+                      backgroundColor: issue.level === 'error' ? '#fef2f2' :
+                                      issue.level === 'warning' ? '#fffbeb' : '#f0f9ff',
+                      border: `1px solid ${issue.level === 'error' ? '#fecaca' :
+                                           issue.level === 'warning' ? '#fed7aa' : '#bae6fd'}`,
+                      borderRadius: '8px'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        marginBottom: '8px'
+                      }}>
+                        <span style={{ fontSize: '16px' }}>
+                          {issue.level === 'error' ? '🔴' : issue.level === 'warning' ? '🟡' : '🔵'}
+                        </span>
+                        <strong style={{ 
+                          fontSize: '14px',
+                          color: issue.level === 'error' ? '#dc2626' :
+                                 issue.level === 'warning' ? '#d97706' : '#2563eb'
+                        }}>
+                          {issue.title}
+                        </strong>
+                      </div>
+                      <p style={{ margin: '0 0 8px 24px', fontSize: '13px', color: '#6b7280' }}>
+                        {issue.description}
+                      </p>
+                      {issue.suggestion && (
+                        <p style={{ 
+                          margin: '0 0 0 24px', 
+                          fontSize: '13px', 
+                          color: '#059669',
+                          fontWeight: '500'
+                        }}>
+                          💡 {issue.suggestion}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* 권장사항 */}
+              {analysisResult.recommendations && analysisResult.recommendations.length > 0 && (
+                <div style={{ marginBottom: '24px' }}>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#1f2937' }}>
+                    Recommendations
+                  </h4>
+                  <ul style={{ margin: 0, paddingLeft: '20px', color: '#4b5563' }}>
+                    {analysisResult.recommendations.map((rec, index) => (
+                      <li key={index} style={{ marginBottom: '8px', fontSize: '14px' }}>
+                        {rec}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              
+              {/* 주요 지표 */}
+              {analysisResult.keyMetrics && (
+                <div>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '600', color: '#1f2937' }}>
+                    Key Metrics
+                  </h4>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                    gap: '12px'
+                  }}>
+                    {Object.entries(analysisResult.keyMetrics).map(([key, value]) => (
+                      value && (
+                        <div key={key} style={{
+                          padding: '12px',
+                          backgroundColor: '#f9fafb',
+                          borderRadius: '8px',
+                          border: '1px solid #e5e7eb',
+                          textAlign: 'center'
+                        }}>
+                          <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                            {key === 'buildTime' ? 'Build Time' :
+                             key === 'framework' ? 'Framework' :
+                             key === 'progress' ? 'Progress' : key}
+                          </div>
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: '#1f2937' }}>
+                            {value}
+                          </div>
+                        </div>
+                      )
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI 분석 에러 토스트 */}
+      {analysisError && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          backgroundColor: '#fee2e2',
+          color: '#991b1b',
+          padding: '12px 16px',
+          borderRadius: '8px',
+          border: '1px solid #fecaca',
+          zIndex: 1001,
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          maxWidth: '400px'
+        }}>
+          <span>❌</span>
+          <span style={{ fontSize: '14px' }}>AI Analysis Failed: {analysisError}</span>
+          <button
+            onClick={() => setAnalysisError(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#991b1b',
+              fontSize: '16px',
+              cursor: 'pointer',
+              marginLeft: '8px',
+              padding: '0',
+              width: '20px',
+              height: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* 로그 컨테이너 - 개선된 스타일 */}
       <div 
@@ -362,5 +796,6 @@ export function DeploymentLogs({ deploymentId, logType = 'all' }) {
         </div>
       </div>
     </div>
+    </>
   )
 }
