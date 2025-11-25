@@ -10,8 +10,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #f5f5f5;
-  color: #333;
+  background: #F8F9FF;
+  color: #0F0F23;
 }
 
 code {
@@ -25,30 +25,42 @@ code {
 }
 
 .header {
-  background: white;
-  border-bottom: 1px solid #e0e0e0;
+  background: linear-gradient(135deg, #FFFFFF 0%, #F8F9FF 100%);
+  border-bottom: 1px solid #E2E8F0;
   padding: 20px 0;
   margin-bottom: 30px;
+  box-shadow: 0 1px 3px rgba(15, 15, 35, 0.1);
 }
 
 .header h1 {
   font-size: 28px;
   font-weight: 700;
-  color: #1a73e8;
+  background: linear-gradient(135deg, #10B981 0%, #F59E0B 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .card {
   background: white;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 24px;
   margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 6px rgba(15, 15, 35, 0.07), 0 1px 3px rgba(15, 15, 35, 0.06);
+  border: 1px solid #F1F5F9;
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 8px 25px rgba(15, 15, 35, 0.1), 0 4px 10px rgba(15, 15, 35, 0.08);
+  transform: translateY(-1px);
 }
 
 .card h2 {
   font-size: 20px;
   margin-bottom: 16px;
-  color: #333;
+  color: #0F0F23;
+  font-weight: 600;
 }
 
 .form-group {
@@ -59,47 +71,56 @@ code {
   display: block;
   margin-bottom: 6px;
   font-weight: 500;
-  color: #555;
+  color: #475569;
 }
 
 .form-group input,
 .form-group textarea {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  padding: 12px 16px;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
   font-size: 14px;
-  transition: border-color 0.2s;
+  transition: all 0.2s ease;
+  background: #FAFBFF;
 }
 
 .form-group input:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #1a73e8;
+  border-color: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+  background: white;
 }
 
 .btn {
-  padding: 10px 20px;
+  padding: 12px 24px;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  letter-spacing: 0.025em;
 }
 
 .btn-primary {
-  background: #1a73e8;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
   color: white;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
 }
 
 .btn-primary:hover {
-  background: #1557b0;
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+  transform: translateY(-1px);
 }
 
 .btn-primary:disabled {
-  background: #ccc;
+  background: #CBD5E1;
   cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 .service-list {
@@ -109,20 +130,23 @@ code {
 
 .service-item {
   background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 20px;
-  transition: box-shadow 0.2s;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 24px;
+  transition: all 0.2s ease;
 }
 
 .service-item:hover {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 8px 25px rgba(15, 15, 35, 0.1);
+  transform: translateY(-2px);
+  border-color: #CBD5E1;
 }
 
 .service-name {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 8px;
+  color: #0F0F23;
 }
 
 .service-status {
@@ -134,40 +158,90 @@ code {
 }
 
 .service-status.active {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  color: #059669;
+  border: 1px solid #34D399;
 }
 
 .service-status.pending {
-  background: #fff3e0;
-  color: #e65100;
+  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+  color: #D97706;
+  border: 1px solid #FBBF24;
 }
 
 .service-status.failed {
-  background: #ffebee;
-  color: #c62828;
+  background: linear-gradient(135deg, #FEF2F2 0%, #FECACA 100%);
+  color: #DC2626;
+  border: 1px solid #F87171;
 }
 
 .loading {
   text-align: center;
   padding: 40px;
-  color: #666;
+  color: #64748B;
 }
 
 .error {
-  background: #ffebee;
-  border: 1px solid #ef5350;
-  color: #c62828;
+  background: linear-gradient(135deg, #FEF2F2 0%, #FECACA 100%);
+  border: 1px solid #F87171;
+  color: #DC2626;
   padding: 12px 16px;
-  border-radius: 4px;
+  border-radius: 8px;
   margin-bottom: 16px;
+  font-weight: 500;
 }
 
 .success {
-  background: #e8f5e9;
-  border: 1px solid #66bb6a;
-  color: #2e7d32;
+  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  border: 1px solid #34D399;
+  color: #059669;
   padding: 12px 16px;
-  border-radius: 4px;
+  border-radius: 8px;
   margin-bottom: 16px;
+  font-weight: 500;
+}
+
+/* 애니메이션 키프레임 */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 배포 히스토리 상태별 색상 */
+.service-status.queued {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.service-status.inspecting {
+  background: #ECFDF5;
+  color: #10B981;
+}
+
+.service-status.building {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.service-status.deploying {
+  background: #fed7aa;
+  color: #ea580c;
+}
+
+.service-status.running {
+  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  color: #059669;
+  border: 1px solid #34D399;
+}
+
+.service-status.building_fail,
+.service-status.deploying_fail {
+  background: linear-gradient(135deg, #FEF2F2 0%, #FECACA 100%);
+  color: #DC2626;
+  border: 1px solid #F87171;
 }

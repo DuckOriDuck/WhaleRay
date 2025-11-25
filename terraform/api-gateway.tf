@@ -3,7 +3,7 @@ resource "aws_apigatewayv2_api" "main" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_origins = ["https://${var.domain_name}", "http://localhost:3000"]
+    allow_origins = ["https://${var.domain_name}", "https://whaleray.oriduckduck.site", "http://localhost:3000"]
     allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     allow_headers = ["*"]
     max_age       = 300
@@ -210,18 +210,6 @@ resource "aws_apigatewayv2_integration" "service" {
   }
 }
 
-resource "aws_apigatewayv2_route" "deploy" {
-  api_id             = aws_apigatewayv2_api.main.id
-  route_key          = "POST /deploy"
-  target             = "integrations/${aws_apigatewayv2_integration.deploy.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
-
-  lifecycle {
-    create_before_destroy = true
-    replace_triggered_by  = [aws_apigatewayv2_integration.deploy.id]
-  }
-}
 
 resource "aws_apigatewayv2_route" "services_list" {
   api_id             = aws_apigatewayv2_api.main.id
@@ -416,4 +404,41 @@ resource "aws_lambda_permission" "api_gw_database" {
   function_name = aws_lambda_function.database.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+# ============================================
+# Log Analyzer API Endpoints (AI-powered analysis)
+# ============================================
+
+resource "aws_lambda_permission" "log_analyzer_api" {
+  statement_id  = "AllowAPIGatewayInvokeLogAnalyzer"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.log_analyzer.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+resource "aws_apigatewayv2_integration" "log_analyzer" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.log_analyzer.invoke_arn
+  payload_format_version = "2.0"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# POST /deployments/{deploymentId}/analyze-logs
+resource "aws_apigatewayv2_route" "deployment_log_analysis" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "POST /deployments/{deploymentId}/analyze-logs"
+  target             = "integrations/${aws_apigatewayv2_integration.log_analyzer.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.lambda_jwt.id
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [aws_apigatewayv2_integration.log_analyzer.id]
+  }
 }

@@ -109,7 +109,7 @@ const DatabaseManager = forwardRef((props, ref) => {
                     disabled={creating}
                     style={{
                         padding: '12px 24px',
-                        background: '#1a73e8',
+                        background: '#10B981',
                         color: 'white',
                         border: 'none',
                         borderRadius: '4px',
@@ -181,7 +181,7 @@ const DatabaseManager = forwardRef((props, ref) => {
                             href={`https://${dbInfo.dbExternalEndpoint}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            style={{ color: '#1a73e8', textDecoration: 'none', fontSize: '14px' }}
+                            style={{ color: '#10B981', textDecoration: 'none', fontSize: '14px' }}
                         >
                             https://{dbInfo.dbExternalEndpoint}
                         </a>

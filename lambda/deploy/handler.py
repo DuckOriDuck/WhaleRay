@@ -63,6 +63,7 @@ def handler(event, context):
             IndexName='userId-index',
             KeyConditionExpression='userId = :userId',
             ExpressionAttributeValues={':userId': user_id},
+            ScanIndexForward=False  # 최신 순으로 정렬 (createdAt DESC)
         )
         installations = response.get('Items', [])
 
@@ -72,12 +73,12 @@ def handler(event, context):
                 'needInstallation': True
             })
 
-        # 올바른 installation 찾기
+        # 올바른 installation 찾기 (최신순 정렬된 결과에서 첫 번째 선택)
         target_installation = None
         for inst in installations:
             if inst.get('accountLogin') == repo_owner:
                 target_installation = inst
-                break
+                break  # 첫 번째가 가장 최신이므로 즉시 선택
 
         if not target_installation:
             return _response(404, {'error': f'No installation found for repository owner "{repo_owner}". Please install the GitHub App.'})

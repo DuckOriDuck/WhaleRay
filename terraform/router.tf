@@ -168,6 +168,7 @@ resource "aws_ecs_task_definition" "router" {
         "awslogs-group"         = aws_cloudwatch_log_group.ecs_router.name
         "awslogs-region"        = var.aws_region
         "awslogs-stream-prefix" = "router"
+        "awslogs-create-group"  = "true"
       }
     }
 
@@ -219,6 +220,9 @@ resource "aws_ecs_service" "router" {
 
   # Health check grace period
   health_check_grace_period_seconds = 60
+
+  # Enable ECS Exec for debugging
+  enable_execute_command = true
 
   tags = {
     Name = "${var.project_name}-router-service"

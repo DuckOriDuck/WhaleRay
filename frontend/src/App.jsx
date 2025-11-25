@@ -141,11 +141,11 @@ function App() {
         justifyContent: 'center',
         alignItems: 'center',
         height: '100vh',
-        background: '#f5f5f5'
+        background: 'linear-gradient(135deg, #0F0F23 0%, #1A1A2E 100%)'
       }}>
         <div style={{ textAlign: 'center' }}>
-          <h2 style={{ color: '#1a73e8' }}>WhaleRay</h2>
-          <p style={{ color: '#666' }}>로딩 중...</p>
+          <h2 style={{ color: '#10B981', fontSize: '32px', fontWeight: '700' }}>WhaleRay</h2>
+          <p style={{ color: '#94A3B8' }}>로딩 중...</p>
         </div>
       </div>
     )
@@ -183,7 +183,7 @@ function App() {
           onClick={() => window.close()}
           style={{
             padding: '8px 16px',
-            background: '#1a73e8',
+            background: '#10B981',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
@@ -205,7 +205,7 @@ function App() {
         justifyContent: 'center',
         alignItems: 'center',
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        background: 'linear-gradient(135deg, #10B981 0%, #F59E0B 100%)',
         padding: '20px'
       }}>
         <div style={{
@@ -220,7 +220,7 @@ function App() {
           <h1 style={{
             fontSize: '42px',
             fontWeight: '700',
-            color: '#1a73e8',
+            color: '#0F0F23',
             marginBottom: '12px'
           }}>
             WhaleRay
@@ -228,10 +228,36 @@ function App() {
           <p style={{
             color: '#666',
             fontSize: '16px',
-            marginBottom: '48px'
+            marginBottom: '24px'
           }}>
             Railway 스타일 배포 플랫폼
           </p>
+          
+          {/* SoftBank Hackathon 2025 뱃지 */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'linear-gradient(135deg, #FF6B6B 0%, #FFE66D 100%)',
+            color: '#333',
+            padding: '8px 16px',
+            borderRadius: '20px',
+            fontSize: '12px',
+            fontWeight: '600',
+            marginBottom: '32px',
+            boxShadow: '0 4px 12px rgba(255, 107, 107, 0.3)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            <span style={{
+              width: '8px',
+              height: '8px',
+              background: '#FF3B3B',
+              borderRadius: '50%',
+              animation: 'pulse 2s infinite'
+            }}></span>
+            SoftBank Hackathon 2025 Participating
+          </div>
 
           <button
             onClick={handleSignIn}
@@ -240,7 +266,7 @@ function App() {
               padding: '16px 24px',
               fontSize: '16px',
               fontWeight: '600',
-              background: '#24292e',
+              background: '#0F0F23',
               color: 'white',
               border: 'none',
               borderRadius: '8px',
@@ -251,8 +277,8 @@ function App() {
               gap: '12px',
               transition: 'all 0.2s'
             }}
-            onMouseOver={(e) => e.target.style.background = '#1b1f23'}
-            onMouseOut={(e) => e.target.style.background = '#24292e'}
+            onMouseOver={(e) => e.target.style.background = '#1A1A2E'}
+            onMouseOut={(e) => e.target.style.background = '#0F0F23'}
           >
             <svg height="24" width="24" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
@@ -277,7 +303,33 @@ function App() {
     <div>
       <div className="header">
         <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1>WhaleRay</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <h1>WhaleRay</h1>
+            {/* SoftBank Hackathon 2025 뱃지 */}
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'linear-gradient(135deg, #FF6B6B 0%, #FFE66D 100%)',
+              color: '#333',
+              padding: '4px 12px',
+              borderRadius: '12px',
+              fontSize: '10px',
+              fontWeight: '600',
+              textTransform: 'uppercase',
+              letterSpacing: '0.3px',
+              boxShadow: '0 2px 8px rgba(255, 107, 107, 0.3)'
+            }}>
+              <span style={{
+                width: '6px',
+                height: '6px',
+                background: '#FF3B3B',
+                borderRadius: '50%',
+                animation: 'pulse 2s infinite'
+              }}></span>
+              Hackathon 2025
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             <span style={{ color: '#666' }}>
               {user.username}
@@ -299,8 +351,8 @@ function App() {
                   padding: '12px 24px',
                   background: 'none',
                   border: 'none',
-                  borderBottom: activeTab === 'services' ? '2px solid #1a73e8' : '2px solid transparent',
-                  color: activeTab === 'services' ? '#1a73e8' : '#666',
+                  borderBottom: activeTab === 'services' ? '3px solid #10B981' : '3px solid transparent',
+                  color: activeTab === 'services' ? '#10B981' : '#64748B',
                   fontWeight: activeTab === 'services' ? '600' : '400',
                   cursor: 'pointer'
                 }}
@@ -313,8 +365,8 @@ function App() {
                   padding: '12px 24px',
                   background: 'none',
                   border: 'none',
-                  borderBottom: activeTab === 'deploy' ? '2px solid #1a73e8' : '2px solid transparent',
-                  color: activeTab === 'deploy' ? '#1a73e8' : '#666',
+                  borderBottom: activeTab === 'deploy' ? '3px solid #10B981' : '3px solid transparent',
+                  color: activeTab === 'deploy' ? '#10B981' : '#64748B',
                   fontWeight: activeTab === 'deploy' ? '600' : '400',
                   cursor: 'pointer'
                 }}
@@ -327,8 +379,8 @@ function App() {
                   padding: '12px 24px',
                   background: 'none',
                   border: 'none',
-                  borderBottom: activeTab === 'history' ? '2px solid #1a73e8' : '2px solid transparent',
-                  color: activeTab === 'history' ? '#1a73e8' : '#666',
+                  borderBottom: activeTab === 'history' ? '3px solid #10B981' : '3px solid transparent',
+                  color: activeTab === 'history' ? '#10B981' : '#64748B',
                   fontWeight: activeTab === 'history' ? '600' : '400',
                   cursor: 'pointer'
                 }}
@@ -341,8 +393,8 @@ function App() {
                   padding: '12px 24px',
                   background: 'none',
                   border: 'none',
-                  borderBottom: activeTab === 'database' ? '2px solid #1a73e8' : '2px solid transparent',
-                  color: activeTab === 'database' ? '#1a73e8' : '#666',
+                  borderBottom: activeTab === 'database' ? '3px solid #10B981' : '3px solid transparent',
+                  color: activeTab === 'database' ? '#10B981' : '#64748B',
                   fontWeight: activeTab === 'database' ? '600' : '400',
                   cursor: 'pointer'
                 }}
@@ -358,19 +410,20 @@ function App() {
                 disabled={refreshing}
                 title="새로고침"
                 style={{
-                  background: 'none',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
+                  background: refreshing ? '#F1F5F9' : '#FFFFFF',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
                   cursor: refreshing ? 'not-allowed' : 'pointer',
                   padding: '8px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: refreshing ? '#999' : '#666',
-                  opacity: refreshing ? 0.6 : 1
+                  color: refreshing ? '#94A3B8' : '#475569',
+                  opacity: refreshing ? 0.6 : 1,
+                  transition: 'all 0.2s ease'
                 }}
-                onMouseOver={(e) => !refreshing && (e.currentTarget.style.background = '#f5f5f5')}
-                onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+                onMouseOver={(e) => !refreshing && (e.currentTarget.style.background = '#F8FAFC')}
+                onMouseOut={(e) => e.currentTarget.style.background = refreshing ? '#F1F5F9' : '#FFFFFF'}
               >
                 <svg
                   width="16"
@@ -397,8 +450,8 @@ function App() {
                   padding: '6px 14px',
                   fontSize: '13px',
                   fontWeight: '500',
-                  color: '#1a73e8',
-                  border: '1px solid #1a73e8',
+                  color: '#10B981',
+                  border: '1px solid #10B981',
                   borderRadius: '4px',
                   display: 'flex',
                   alignItems: 'center',
@@ -406,10 +459,14 @@ function App() {
                   transition: 'all 0.2s'
                 }}
                 onMouseOver={(e) => {
-                  e.currentTarget.style.background = '#e8f0fe'
+                  e.currentTarget.style.background = '#EBF4FF'
+                  e.currentTarget.style.borderColor = '#059669'
+                  e.currentTarget.style.color = '#059669'
                 }}
                 onMouseOut={(e) => {
                   e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.borderColor = '#10B981'
+                  e.currentTarget.style.color = '#10B981'
                 }}
               >
                 <svg height="14" width="14" viewBox="0 0 16 16" fill="currentColor">
