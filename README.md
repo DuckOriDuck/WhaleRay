@@ -66,7 +66,7 @@ WhaleRay maintains only one service per repository. When you redeploy an already
 
 ### Intelligent Traffic Routing
 - WhaleRay aimed to provide instant access to deployed services within a subdomain.
-- To build a platform that can **stably deploy 100+ services**, we needed to overcome AWS ALB's listener rule limit (50 rules). Instead of static routing rules, we implemented **dynamic service discovery using Nginx and AWS Cloud Map**, enabling unlimited scalability.
+- Traditional AWS ALB rule-based routing had a **structural limitation (hard coupling)** where infrastructure resources (ALB Listener Rules, Target Groups) needed to be modified every time services increased. To overcome this and flexibly accommodate 100+ services, we designed a dynamic service discovery pattern combining Nginx and AWS Cloud Map.
 <img width="1593" height="602" alt="image" src="https://github.com/user-attachments/assets/fdbe746f-cec2-4f48-b77f-9d39b2b40f53" />
 
 - **Overcoming ALB Limitations**: Instead of creating ALB rules for each deployed service, all traffic is forwarded to the Nginx router, eliminating infrastructure constraints.
