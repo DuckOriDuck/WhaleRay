@@ -1,6 +1,7 @@
 # WhaleRay : Github Compatible One-click Deployment PaaS
 Ship to AWS in seconds with WhaleRay’s seamless GitHub App integration. Just connect your repository, click deploy, and let us handle the rest
 
+* The Whaleray server is temporarily offline. It is scheduled to be integrated with '[Ducksnest](https://github.com/DuckOriDuck/ducksnest-homelab)' to enable temporary deployments on my own infrastructure.*
 
 #### Preliminary entry for Softbank Hackathon 2025 in Korea
 <img width="1987" height="334" alt="image" src="https://github.com/user-attachments/assets/4a3c9ec5-53b3-4166-80b7-9b3d95e0676f" />
