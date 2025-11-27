@@ -1,13 +1,19 @@
 # WhaleRay : Github Compatible One-click Deployment PaaS
 Ship to AWS in seconds with WhaleRay’s seamless GitHub App integration. Just connect your repository, click deploy, and let us handle the rest
 
-* The Whaleray server is temporarily offline. It is scheduled to be integrated with '[Ducksnest](https://github.com/DuckOriDuck/ducksnest-homelab)' to enable temporary deployments on my own infrastructure.*
+*The Whaleray server is temporarily offline. It is scheduled to be integrated with '[Ducksnest](https://github.com/DuckOriDuck/ducksnest-homelab)' to enable temporary deployments on my own Homelab Infrastructure.*
+
+#### 한국어 문서는 [여기서](README-KOREAN.md) 보시면 됩니다.
 
 #### Preliminary entry for Softbank Hackathon 2025 in Korea
 <img width="1987" height="334" alt="image" src="https://github.com/user-attachments/assets/4a3c9ec5-53b3-4166-80b7-9b3d95e0676f" />
 
 # Key Features
-## 1. One-Click Zero-Config Deployment
+## 1. Secure GitHub App Integration - No Token Required
+
+Authenticate with GitHub OAuth in one click - no personal access tokens needed. WhaleRay never stores your credentials, eliminating token exposure risks while providing secure repository access.
+
+## 2. One-Click Zero-Config Deployment
 - Deploy your Spring Boot applications without writing a single line of Dockerfile or build script. The system automatically analyzes your repository and configures the optimal build environment.
 <img width="2069" height="1482" alt="image" src="https://github.com/user-attachments/assets/15e7ae2f-bb84-4b5d-b220-ca82eb242d9a" />
 
@@ -40,7 +46,7 @@ Track your deployment progress through multiple states: **INSPECTING**, **BUILDI
 
 - you can view the deployed service in the unique subdomain of our service, each service is unique with one repository, each owning it's own fixed domain under
 
-## 2. Dynamic Routing & Zero Downtime Updates
+## 3. Dynamic Routing & Zero Downtime Updates
 
 Each service receives a unique subdomain and path, with seamless version updates that ensure zero downtime during deployment.
 
@@ -69,7 +75,7 @@ When you deploy from the same branch, the pre-existing service is seamlessly rep
 - During deployment, new containers reach 100% healthy (Running) state before old containers begin draining and termination
 - This strategy guarantees zero downtime updates, ensuring continuous service availability
 
-## 3. AI-Powered Build Log Analysis
+## 4. AI-Powered Build Log Analysis
 
 When deployments fail, there's no need to manually parse through thousands of log lines. An AI agent integrated with AWS Bedrock diagnoses the root cause for you.
 
