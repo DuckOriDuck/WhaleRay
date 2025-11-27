@@ -62,18 +62,25 @@ https://service.whaleray.oriduckduck.site/{user-id}-{organization-name}-{reposit
 
 *Access your deployed service through its unique subdomain*
 
-When you deploy from the same branch, the pre-existing service is seamlessly replaced by the new build result.
+WhaleRay maintains only one service per repository. When you redeploy an already deployed repository, the existing instance is terminated and replaced with the new build version.
 
 ### Intelligent Traffic Routing
+- WhaleRay aimed to provide instant access to deployed services within a subdomain.
+- To build a platform that can **stably deploy 100+ services**, we needed to overcome AWS ALB's listener rule limit (50 rules). Instead of static routing rules, we implemented **dynamic service discovery using Nginx and AWS Cloud Map**, enabling unlimited scalability.
+<img width="1593" height="602" alt="image" src="https://github.com/user-attachments/assets/fdbe746f-cec2-4f48-b77f-9d39b2b40f53" />
 
-- **Nginx Router**: Uses regex patterns (`^/(?<deployment_id>github_[^/]+)`) to identify target services and route traffic accordingly
-- **Service Discovery (AWS Cloud Map)**: ECS tasks automatically register their private IPs in the `whaleray.local` namespace, enabling Nginx to dynamically discover container IPs as they change
+- **Overcoming ALB Limitations**: Instead of creating ALB rules for each deployed service, all traffic is forwarded to the Nginx router, eliminating infrastructure constraints.
+- **Nginx Router**: Uses regex patterns (`^/(?<deployment_id>github_[^/]+)`) to extract Service IDs from URL paths and route traffic accordingly.
+- **Service Discovery (AWS Cloud Map)**: When ECS tasks start, they automatically register their private IPs mapped to unique Service IDs in the `whaleray.local` namespace. Nginx dynamically resolves these IPs through internal DNS to connect user requests.
+
+- **Perks**:
+  - **Managed Security**: TLS Termination is handled at the ALB level, allowing containers to focus solely on lightweight HTTP communication. Users receive HTTPS services without any additional configuration.
+  - **Deterministic Routing**: Through a fixed Path policy for service identification, users get **immutable service endpoints** regardless of deployment environment. This simplifies OAuth Redirect URI configuration for Google/Facebook/Naver login, improving operational efficiency.
 
 ### Rolling Deployment Strategy
 
-- ECS services are configured with **Minimum Healthy Percent: 100%** and **Maximum Percent: 200%**
-- During deployment, new containers reach 100% healthy (Running) state before old containers begin draining and termination
-- This strategy guarantees zero downtime updates, ensuring continuous service availability
+- Deployment ECS services are configured with **Minimum Healthy Percent: 100%** and **Maximum Percent: 200%**, ensuring new build containers reach 100% healthy (Running) state before terminating old containers.
+- This guarantees zero downtime updates during new build deployments, maintaining continuous service availability
 
 ## 4. AI-Powered Build Log Analysis
 
